@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_polars::{from_dataframe, to_dataframe};
 
-#[cfg(feature = "polars")]
+
 use polars::prelude::*;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -13,7 +13,7 @@ struct OptionalRecord {
     count: Option<i32>,
 }
 
-#[cfg(feature = "polars")]
+
 #[test]
 fn test_optional_fields_mixed() {
     let records = vec![
@@ -53,7 +53,7 @@ fn test_optional_fields_mixed() {
     assert_eq!(records, converted);
 }
 
-#[cfg(feature = "polars")]
+
 #[test]
 fn test_all_none_optional() {
     let records = vec![
@@ -79,7 +79,7 @@ fn test_all_none_optional() {
     assert_eq!(records, converted);
 }
 
-#[cfg(feature = "polars")]
+
 #[test]
 fn test_all_some_optional() {
     let records = vec![

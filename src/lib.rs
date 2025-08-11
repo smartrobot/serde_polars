@@ -59,7 +59,7 @@
 //! # }
 //! ```
 
-#[cfg(feature = "polars")]
+
 use polars::prelude::*;
 
 use arrow::compute;
@@ -202,10 +202,6 @@ where
     let df: DataFrame = version_compat::arrow_to_dataframe(vec![converted_rb])?;
     Ok(df)
 }
-
-// Legacy function names for backward compatibility
-pub use from_dataframe as dataframe_to_structs;
-pub use to_dataframe as structs_to_dataframe;
 
 #[cfg(test)]
 mod tests {

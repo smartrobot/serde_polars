@@ -1,8 +1,6 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use serde::{Deserialize, Serialize};
 use serde_polars::{from_dataframe, to_dataframe};
-
-#[cfg(feature = "polars")]
 use polars::prelude::*;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -26,7 +24,6 @@ impl BenchRecord {
     }
 }
 
-#[cfg(feature = "polars")]
 fn bench_to_dataframe(c: &mut Criterion) {
     let mut group = c.benchmark_group("to_dataframe");
 
@@ -43,7 +40,6 @@ fn bench_to_dataframe(c: &mut Criterion) {
     group.finish();
 }
 
-#[cfg(feature = "polars")]
 fn bench_from_dataframe(c: &mut Criterion) {
     let mut group = c.benchmark_group("from_dataframe");
 
@@ -62,7 +58,6 @@ fn bench_from_dataframe(c: &mut Criterion) {
     group.finish();
 }
 
-#[cfg(feature = "polars")]
 fn bench_roundtrip(c: &mut Criterion) {
     let mut group = c.benchmark_group("roundtrip");
 
@@ -81,7 +76,6 @@ fn bench_roundtrip(c: &mut Criterion) {
     group.finish();
 }
 
-#[cfg(feature = "polars")]
 criterion_group!(
     benches,
     bench_to_dataframe,
@@ -89,7 +83,6 @@ criterion_group!(
     bench_roundtrip
 );
 
-#[cfg(not(feature = "polars"))]
 criterion_group!(benches);
 
 criterion_main!(benches);

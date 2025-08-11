@@ -34,7 +34,7 @@ path = "tests/performance/benchmarks.rs"
 
 
 [features]
-default = []
+default = ["polars"]
 
 # Polars version features - users can select which version they want
 # IMPORTANT: These features are mutually exclusive! Only enable ONE at a time.

@@ -34,20 +34,20 @@ path = "tests/performance/benchmarks.rs"
 
 
 [features]
-default = ["polars-0-40"]
+default = []
 
 # Polars version features - users can select which version they want
 # IMPORTANT: These features are mutually exclusive! Only enable ONE at a time.
 # Never use --all-features as it will cause compilation errors.
-polars-0-40 = ["polars", "df-interchange", "df-interchange/polars_0_40"]
-polars-0-41 = ["polars", "df-interchange", "df-interchange/polars_0_41"]
-polars-0-42 = ["polars", "df-interchange", "df-interchange/polars_0_42"]
-polars-0-43 = ["polars", "df-interchange", "df-interchange/polars_0_43"]
-polars-0-44 = ["polars", "df-interchange", "df-interchange/polars_0_44"]
-polars-0-45 = ["polars", "df-interchange", "df-interchange/polars_0_45"]
-polars-0-46 = ["polars", "df-interchange", "df-interchange/polars_0_46"]
-polars-0-47 = ["polars", "df-interchange", "df-interchange/polars_0_47"]
-polars-0-48 = ["polars", "df-interchange", "df-interchange/polars_0_48"]
-polars-0-49 = ["polars", "df-interchange", "df-interchange/polars_0_49"]
-polars-0-50 = ["polars", "df-interchange", "df-interchange/polars_0_50"]
+polars-0-40 = ["df-interchange", "df-interchange/polars_0_40"]
+polars-0-41 = ["df-interchange", "df-interchange/polars_0_41"]
+polars-0-42 = ["df-interchange", "df-interchange/polars_0_42"]
+polars-0-43 = ["df-interchange", "df-interchange/polars_0_43"]
+polars-0-44 = ["df-interchange", "df-interchange/polars_0_44"]
+polars-0-45 = ["df-interchange", "df-interchange/polars_0_45"]
+polars-0-46 = ["df-interchange", "df-interchange/polars_0_46"]
+polars-0-47 = ["df-interchange", "df-interchange/polars_0_47"]
+polars-0-48 = ["df-interchange", "df-interchange/polars_0_48"]
+polars-0-49 = ["df-interchange", "df-interchange/polars_0_49"]
+polars-0-50 = ["df-interchange", "df-interchange/polars_0_50"]
 

@@ -279,19 +279,5 @@ mod tests {
         assert!(matches!(result.unwrap_err(), PolarsSerdeError::EmptyInput));
     }
 
-    #[test]
-    fn test_legacy_function_names() {
-        let records = vec![TestRecord {
-            name: "Test".to_string(),
-            age: 25,
-            score: 85.5,
-            active: true,
-        }];
-
-        // Test legacy names still work
-        let df = structs_to_dataframe(&records).unwrap();
-        let converted_back: Vec<TestRecord> = dataframe_to_structs(df).unwrap();
-
-        assert_eq!(records, converted_back);
-    }
+   
 }

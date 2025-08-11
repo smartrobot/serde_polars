@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_polars::{from_dataframe, to_dataframe};
 
-#[cfg(feature = "polars")]
 use polars::prelude::*;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -11,7 +10,7 @@ struct TestRecord {
     score: f64,
 }
 
-#[cfg(feature = "polars")]
+
 #[test]
 fn test_mismatched_schema_detection() {
     // This test ensures that our conversion properly handles type mismatches
@@ -35,7 +34,6 @@ struct MissingFieldRecord {
     // Note: we'll create a DataFrame that's missing the 'extra' field
 }
 
-#[cfg(feature = "polars")]
 #[test] 
 fn test_missing_dataframe_columns() {
     // Create DataFrame with missing column
@@ -60,7 +58,6 @@ struct ExtraFieldRecord {
     // Note: DataFrame will have extra fields that this struct doesn't have
 }
 
-#[cfg(feature = "polars")]
 #[test]
 fn test_extra_dataframe_columns() {
     // Create DataFrame with extra columns

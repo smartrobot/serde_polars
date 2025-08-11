@@ -1,7 +1,5 @@
 use serde::{Deserialize, Serialize};
 use serde_polars::{from_dataframe, to_dataframe, PolarsSerdeError};
-
-#[cfg(feature = "polars")]
 use polars::prelude::*;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -10,7 +8,6 @@ struct TestRecord {
     name: String,
 }
 
-#[cfg(feature = "polars")]
 #[test]
 fn test_empty_vec_error() {
     let empty_records: Vec<TestRecord> = vec![];
@@ -23,7 +20,6 @@ fn test_empty_vec_error() {
     }
 }
 
-#[cfg(feature = "polars")]
 #[test] 
 fn test_single_row_dataframe() {
     let record = TestRecord {
@@ -47,7 +43,7 @@ struct EdgeCaseStrings {
     special_chars: String,
 }
 
-#[cfg(feature = "polars")]
+
 #[test]
 fn test_edge_case_strings() {
     let very_long_string = "a".repeat(10000);
@@ -87,7 +83,6 @@ struct NumericEdgeCases {
     min_positive_f32: f32,
 }
 
-#[cfg(feature = "polars")]
 #[test]
 fn test_numeric_edge_cases() {
     let records = vec![

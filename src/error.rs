@@ -2,7 +2,6 @@
 
 use thiserror::Error;
 
-//! Select the correct polars version
 #[cfg(feature = "polars_0_40")]
 use polars_crate_0_40 as polars;
 

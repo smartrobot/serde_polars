@@ -9,7 +9,7 @@ struct ThreadTestRecord {
     name: String,
 }
 
-#[cfg(feature = "polars")]
+
 #[test]
 fn test_multithreading_safety() {
     use std::thread;

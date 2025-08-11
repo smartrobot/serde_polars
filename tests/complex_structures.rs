@@ -137,7 +137,7 @@ struct TupleRecord {
 
 // NOTE: Tuple serialization is currently not supported by serde_arrow/polars
 // This test shows the limitation and is commented out
-#[cfg(feature = "polars")]
+
 #[test]
 #[ignore = "Tuples not supported by serde_arrow/polars interchange"]
 fn test_tuple_serialization() {
@@ -174,7 +174,6 @@ struct NewtypeRecord {
     score: f64,
 }
 
-#[cfg(feature = "polars")]
 #[test]
 fn test_newtype_wrappers() {
     let records = vec![
@@ -276,7 +275,7 @@ fn dataframe_to_app_records(
     Ok(polars_records.into_iter().map(|r| r.into()).collect())
 }
 
-#[cfg(feature = "polars")]
+
 #[test]
 fn test_working_enum_pattern() {
     // Application records with enums

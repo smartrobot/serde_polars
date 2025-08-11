@@ -1,5 +1,38 @@
 //! Version compatibility layer for different Polars versions
 
+#[cfg(feature = "polars_0_40")]
+use polars_crate_0_40 as polars;
+
+#[cfg(feature = "polars_0_41")]
+use polars_crate_0_41 as polars;
+
+#[cfg(feature = "polars_0_42")]
+use polars_crate_0_42 as polars;
+
+#[cfg(feature = "polars_0_43")]
+use polars_crate_0_43 as polars;
+
+#[cfg(feature = "polars_0_44")]
+use polars_crate_0_44 as polars;
+
+#[cfg(feature = "polars_0_45")]
+use polars_crate_0_45 as polars;
+
+#[cfg(feature = "polars_0_46")]
+use polars_crate_0_46 as polars;
+
+#[cfg(feature = "polars_0_47")]
+use polars_crate_0_47 as polars;
+
+#[cfg(feature = "polars_0_48")]
+use polars_crate_0_48 as polars;
+
+#[cfg(feature = "polars_0_49")]
+use polars_crate_0_49 as polars;
+
+#[cfg(feature = "polars_0_50")]
+use polars_crate_0_50 as polars;
+
 #[cfg(not(any(
     feature = "polars_0_40",
     feature = "polars_0_41",

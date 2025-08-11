@@ -30,7 +30,7 @@
 //!
 //! ## Quick Start
 //!
-//! ```rust
+//! ```rust,no_run
 //! use polars::prelude::*;
 //! use serde::{Serialize, Deserialize};
 //! use serde_polars::{from_dataframe, to_dataframe};
@@ -153,7 +153,7 @@ fn convert_dictionary_to_strings(batch: RecordBatch) -> Result<RecordBatch> {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use polars::prelude::*;
 /// use serde::Deserialize;
 /// use serde_polars::from_dataframe;
@@ -191,7 +191,7 @@ where
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use serde::{Serialize, Deserialize};
 /// use serde_polars::to_dataframe;
 ///

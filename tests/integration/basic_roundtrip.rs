@@ -1,7 +1,38 @@
 use serde::{Deserialize, Serialize};
 use serde_polars::{from_dataframe, to_dataframe};
 
-#[cfg(feature = "polars")]
+#[cfg(feature = "polars_0_40")]
+use polars_crate_0_40 as polars;
+
+#[cfg(feature = "polars_0_41")]
+use polars_crate_0_41 as polars;
+
+#[cfg(feature = "polars_0_42")]
+use polars_crate_0_42 as polars;
+
+#[cfg(feature = "polars_0_43")]
+use polars_crate_0_43 as polars;
+
+#[cfg(feature = "polars_0_44")]
+use polars_crate_0_44 as polars;
+
+#[cfg(feature = "polars_0_45")]
+use polars_crate_0_45 as polars;
+
+#[cfg(feature = "polars_0_46")]
+use polars_crate_0_46 as polars;
+
+#[cfg(feature = "polars_0_47")]
+use polars_crate_0_47 as polars;
+
+#[cfg(feature = "polars_0_48")]
+use polars_crate_0_48 as polars;
+
+#[cfg(feature = "polars_0_49")]
+use polars_crate_0_49 as polars;
+
+#[cfg(feature = "polars_0_50")]
+use polars_crate_0_50 as polars;
 use polars::prelude::*;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -12,7 +43,6 @@ struct BasicRecord {
     active: bool,
 }
 
-#[cfg(feature = "polars")]
 #[test]
 fn test_basic_roundtrip() {
     let original_records = vec![
@@ -50,7 +80,7 @@ fn test_basic_roundtrip() {
     assert_eq!(original_records, converted_records);
 }
 
-#[cfg(feature = "polars")]
+
 #[test]
 fn test_single_record() {
     let record = BasicRecord {
@@ -66,7 +96,6 @@ fn test_single_record() {
     assert_eq!(vec![record], converted);
 }
 
-#[cfg(feature = "polars")]
 #[test]
 fn test_large_dataset() {
     let large_records: Vec<BasicRecord> = (0..10000)

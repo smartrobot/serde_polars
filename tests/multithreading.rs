@@ -64,7 +64,7 @@ fn test_multithreading_safety() {
     );
 }
 
-#[cfg(feature = "polars")]
+
 #[test]
 fn test_rayon_parallel_iterator() {
     // Note: This test requires rayon to be available, but we'll make it optional
@@ -112,7 +112,7 @@ fn test_rayon_parallel_iterator() {
     println!("✓ Parallel processing simulation completed successfully");
 }
 
-#[cfg(feature = "polars")]
+
 #[test]
 fn test_concurrent_dataframe_operations() {
     use std::sync::Arc;
@@ -158,7 +158,7 @@ fn test_concurrent_dataframe_operations() {
     println!("✓ Concurrent DataFrame reading test completed");
 }
 
-#[cfg(feature = "polars")]
+
 #[test]
 fn test_thread_local_operations() {
     use std::thread;

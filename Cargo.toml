@@ -1,5 +1,5 @@
 name = "serde_polars"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 authors = ["Your Name <your.email@example.com>"]
 description = "High-performance serde integration for Polars DataFrames"

@@ -1,4 +1,3 @@
- [package]
 name = "serde_polars"
 version = "0.1.1"
 edition = "2021"
@@ -13,7 +12,19 @@ readme = "README.md"
 
 [dependencies]
 # User must include this in their Cargo.toml - we just specify minimum requirement
-polars = { version = ">=0.40", optional = true, default-features = false }
+polars_crate_0_40 = { package = "polars", version = "0.40", optional = true}
+polars_crate_0_41 = { package = "polars", version = "0.41", optional = true}
+polars_crate_0_42 = { package = "polars", version = "0.42", optional = true}
+polars_crate_0_43 = { package = "polars", version = "0.43", optional = true}
+polars_crate_0_44 = { package = "polars", version = "0.44", optional = true}
+polars_crate_0_45 = { package = "polars", version = "0.45", optional = true}
+polars_crate_0_46 = { package = "polars", version = "0.46", optional = true}
+polars_crate_0_47 = { package = "polars", version = "0.47", optional = true}
+polars_crate_0_48 = { package = "polars", version = "0.48", optional = true}
+polars_crate_0_49 = { package = "polars", version = "0.49", optional = true}
+polars_crate_0_50 = { package = "polars", version = "0.50", optional = true}
+
+
 serde = { version = "1.0", features = ["derive"] }
 serde_arrow = { version = "0.13", features = ["arrow-55"] }
 arrow = "55.0"
@@ -39,15 +50,16 @@ default = ["polars"]
 # Polars version features - users can select which version they want
 # IMPORTANT: These features are mutually exclusive! Only enable ONE at a time.
 # Never use --all-features as it will cause compilation errors.
-polars-0-40 = ["df-interchange", "df-interchange/polars_0_40"]
-polars-0-41 = ["df-interchange", "df-interchange/polars_0_41"]
-polars-0-42 = ["df-interchange", "df-interchange/polars_0_42"]
-polars-0-43 = ["df-interchange", "df-interchange/polars_0_43"]
-polars-0-44 = ["df-interchange", "df-interchange/polars_0_44"]
-polars-0-45 = ["df-interchange", "df-interchange/polars_0_45"]
-polars-0-46 = ["df-interchange", "df-interchange/polars_0_46"]
-polars-0-47 = ["df-interchange", "df-interchange/polars_0_47"]
-polars-0-48 = ["df-interchange", "df-interchange/polars_0_48"]
-polars-0-49 = ["df-interchange", "df-interchange/polars_0_49"]
-polars-0-50 = ["df-interchange", "df-interchange/polars_0_50"]
+polars_0_40 = ["polars_crate_0_40", "df-interchange", "df-interchange/polars_0_40"]
+polars_0_41 = ["polars_crate_0_41", "df-interchange", "df-interchange/polars_0_41"]
+polars_0_42 = ["polars_crate_0_42", "df-interchange", "df-interchange/polars_0_42"]
+polars_0_43 = ["polars_crate_0_43", "df-interchange", "df-interchange/polars_0_43"]
+polars_0_44 = ["polars_crate_0_44", "df-interchange", "df-interchange/polars_0_44"]
+polars_0_45 = ["polars_crate_0_45", "df-interchange", "df-interchange/polars_0_45"]
+polars_0_46 = ["polars_crate_0_46", "df-interchange", "df-interchange/polars_0_46"]
+polars_0_47 = ["polars_crate_0_47", "df-interchange", "df-interchange/polars_0_47"]
+polars_0_48 = ["polars_crate_0_48", "df-interchange", "df-interchange/polars_0_48"]
+polars_0_49 = ["polars_crate_0_49", "df-interchange", "df-interchange/polars_0_49"]
+polars_0_50 = ["polars_crate_0_50", "df-interchange", "df-interchange/polars_0_50"]
+
 

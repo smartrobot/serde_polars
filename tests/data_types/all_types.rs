@@ -1,7 +1,5 @@
 use serde::{Deserialize, Serialize};
 use serde_polars::{from_dataframe, to_dataframe};
-
-#[cfg(feature = "polars")]
 use polars::prelude::*;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -27,7 +25,7 @@ struct AllTypesRecord {
     bool_val: bool,
 }
 
-#[cfg(feature = "polars")]
+
 #[test]
 fn test_all_numeric_types() {
     let records = vec![
@@ -77,7 +75,6 @@ struct SpecialFloats {
     // Note: NaN doesn't equal itself, so we'll test it separately
 }
 
-#[cfg(feature = "polars")]
 #[test]
 fn test_special_float_values() {
     let records = vec![
@@ -106,7 +103,6 @@ struct StringVariations {
     newlines: String,
 }
 
-#[cfg(feature = "polars")]
 #[test]
 fn test_string_variations() {
     let records = vec![

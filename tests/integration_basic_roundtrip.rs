@@ -9,7 +9,6 @@ struct BasicRecord {
     active: bool,
 }
 
-#[cfg(feature = "polars")]
 #[test]
 fn test_basic_roundtrip() {
     let original_records = vec![
@@ -48,7 +47,6 @@ fn test_basic_roundtrip() {
     assert_eq!(original_records, converted_records);
 }
 
-#[cfg(feature = "polars")]
 #[test]
 fn test_large_dataset() {
     let large_records: Vec<BasicRecord> = (0..1000)

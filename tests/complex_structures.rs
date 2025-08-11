@@ -18,7 +18,6 @@ struct MetadataRecord {
 
 // Note: This test may not work as expected since Polars doesn't natively support
 // nested structures in the same way. We'll test what's possible.
-#[cfg(feature = "polars")]
 #[test]
 fn test_flattened_nested_structures() {
     // For nested structures, we typically need to flatten them
@@ -88,7 +87,7 @@ enum Priority {
 
 // NOTE: Direct enum serialization has limitations with serde_arrow/polars interchange
 // For working enum support, see tests/enum_working.rs which shows the proper pattern
-#[cfg(feature = "polars")]
+
 #[test]
 #[ignore = "Direct enum serialization requires categorical feature - see enum_working.rs for working pattern"]
 fn test_enum_serialization() {

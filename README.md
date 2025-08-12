@@ -28,8 +28,8 @@ Add to your `Cargo.toml`:
 polars = "0.46"
 serde = { version = "1.0", features = ["derive"] }
 
-# Match the feature to your Polars version
-serde_polars = { version = "0.1", features = ["polars-0-46"] }
+# Match the feature to your Polars version (note: underscores, not hyphens)
+serde_polars = { version = "0.1", default-features = false, features = ["polars_0_46"] }
 ```
 
 ## 🎯 Quick Start
@@ -176,17 +176,17 @@ let results: Vec<_> = handles
 
 | Polars Version | Feature Flag | Status |
 |----------------|--------------|---------|
-| 0.40.x | `polars-0-40` | ✅ Supported |
-| 0.41.x | `polars-0-41` | ✅ Supported |
-| 0.42.x | `polars-0-42` | ✅ Supported |
-| 0.43.x | `polars-0-43` | ✅ Supported |
-| 0.44.x | `polars-0-44` | ✅ Supported |
-| 0.45.x | `polars-0-45` | ✅ Supported |
-| 0.46.x | `polars-0-46` | ✅ Supported |
-| 0.47.x | `polars-0-47` | ✅ Supported |
-| 0.48.x | `polars-0-48` | ✅ Supported |
-| 0.49.x | `polars-0-49` | ✅ Supported |
-| 0.50.x | `polars-0-50` | ✅ Supported |
+| 0.40.x | `polars_0_40` | ✅ Supported |
+| 0.41.x | `polars_0_41` | ✅ Supported |
+| 0.42.x | `polars_0_42` | ✅ Supported |
+| 0.43.x | `polars_0_43` | ✅ Supported |
+| 0.44.x | `polars_0_44` | ✅ Supported |
+| 0.45.x | `polars_0_45` | ✅ Supported |
+| 0.46.x | `polars_0_46` | ✅ Supported |
+| 0.47.x | `polars_0_47` | ✅ Supported |
+| 0.48.x | `polars_0_48` | ✅ Supported |
+| 0.49.x | `polars_0_49` | ✅ Supported |
+| 0.50.x | `polars_0_50` | ✅ Supported |
 
 **Important**: 
 - The Polars version and feature flag must match exactly!
@@ -197,7 +197,7 @@ let results: Vec<_> = handles
 # Example for Polars 0.44
 [dependencies]
 polars = "0.44"
-serde_polars = { version = "0.1", default-features = false, features = ["polars-0-44"] }
+serde_polars = { version = "0.1", default-features = false, features = ["polars_0_44"] }
 ```
 
 ## 📊 Supported Data Types
@@ -249,7 +249,7 @@ cargo test multithreading
 cargo test complex_structures
 
 # Test with a different Polars version
-cargo test --no-default-features --features polars-0-46
+cargo test --no-default-features --features polars_0_46
 
 # IMPORTANT: Never use --all-features as version features are mutually exclusive
 ```
@@ -265,10 +265,12 @@ cargo test --no-default-features --features polars-0-46
 
 Contributions are welcome! Please ensure:
 
-1. All tests pass: `cargo test --all-features`
+1. All tests pass: `cargo test --no-default-features --features polars_0_46` (or your target version)
 2. Code is formatted: `cargo fmt`
-3. No clippy warnings: `cargo clippy`
+3. No clippy warnings: `cargo clippy --no-default-features --features polars_0_46`
 4. Add tests for new functionality
+
+**Note**: Never use `--all-features` as the Polars version features are mutually exclusive.
 
 ## 📄 License
 

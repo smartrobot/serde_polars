@@ -7986,13 +7986,23 @@ dependencies = [
 
 [[package]]
 name = "serde_polars"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "arrow",
  "criterion",
  "df-interchange",
  "polars 0.40.0",
+ "polars 0.41.3",
+ "polars 0.42.0",
+ "polars 0.43.1",
+ "polars 0.44.2",
+ "polars 0.45.1",
+ "polars 0.46.0",
+ "polars 0.47.1",
+ "polars 0.48.1",
+ "polars 0.49.1",
+ "polars 0.50.0",
  "serde",
  "serde_arrow",
  "tempfile",

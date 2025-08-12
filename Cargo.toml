@@ -46,7 +46,7 @@ path = "tests/performance/benchmarks.rs"
 
 
 [features]
-default = ["df-interchange", "polars_0_40"]
+default = ["df-interchange"]
 
 # Polars version features - users can select which version they want
 # IMPORTANT: These features are mutually exclusive! Only enable ONE at a time.

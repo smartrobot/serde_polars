@@ -30,6 +30,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_arrow = { version = "0.13", features = ["arrow-55"] }
 arrow = "55.0"
 thiserror = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
 df-interchange = { version = "0.2", features = ["arrow_55", "arrow_crate_55"], optional = true }
 
 [dev-dependencies]

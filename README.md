@@ -27,6 +27,7 @@ Add to your `Cargo.toml`:
 # Include the Polars version you're using
 polars = "0.46"
 serde = { version = "1.0", features = ["derive"] }
+chrono = { version = "0.4", features = ["serde"] }  # Required for date/time support
 
 # Match the feature to your Polars version (note: underscores, not hyphens)
 serde_polars = { version = "0.1", default-features = false, features = ["polars_0_46"] }
@@ -66,6 +67,57 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{:#?}", filtered_people);
     Ok(())
 }
+```
+
+## 📅 Date/Time Support
+
+Working with temporal data is seamless:
+
+```rust
+use chrono::{NaiveDate, NaiveDateTime, DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use serde_polars::{from_dataframe, to_dataframe};
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+struct Event {
+    id: i64,
+    event_date: NaiveDate,
+    event_time: NaiveDateTime,
+    created_at: DateTime<Utc>,
+    description: String,
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let events = vec![
+        Event {
+            id: 1,
+            event_date: NaiveDate::from_ymd_opt(2023, 12, 25).unwrap(),
+            event_time: NaiveDate::from_ymd_opt(2023, 12, 25).unwrap()
+                .and_hms_opt(14, 30, 0).unwrap(),
+            created_at: DateTime::parse_from_rfc3339("2023-12-01T10:00:00Z")?.with_timezone(&Utc),
+            description: "Christmas".to_string(),
+        },
+    ];
+
+    // Convert to DataFrame - dates become proper Arrow date types
+    let df = to_dataframe(&events)?;
+    
+    // Use Polars date operations
+    let filtered = df.filter(
+        col("event_date").gt(lit(NaiveDate::from_ymd_opt(2023, 12, 1).unwrap()))
+    )?;
+    
+    // Convert back to structs
+    let results: Vec<Event> = from_dataframe(filtered)?;
+    println!("{:#?}", results);
+    Ok(())
+}
+```
+
+**Required setup for dates:**
+```toml
+[dependencies]
+chrono = { version = "0.4", features = ["serde"] }
 ```
 
 ## 🏷️ Enum Support
@@ -210,6 +262,9 @@ serde_polars = { version = "0.1", default-features = false, features = ["polars_
 | `bool` | `Boolean` | ✅ |
 | `String` | `String` | ✅ |
 | `Option<T>` | `Nullable<T>` | ✅ |
+| `chrono::NaiveDate` | `Date` | ✅ |
+| `chrono::NaiveDateTime` | `Datetime` | ✅ |
+| `chrono::DateTime<Tz>` | `Datetime` | ✅ |
 | Enums (via strings) | `String` | ✅ |
 | Nested structs (flattened) | Multiple columns | ✅ |
 | Newtype wrappers | Underlying type | ✅ |

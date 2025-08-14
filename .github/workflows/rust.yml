@@ -11,12 +11,14 @@ env:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        polars_version: [polars_0_40, polars_0_41, polars_0_42, polars_0_43, polars_0_44, polars_0_45, polars_0_46, polars_0_47, polars_0_48, polars_0_49, polars_0_50]
 
     steps:
     - uses: actions/checkout@v4
-    - name: Build
-      run: cargo build --verbose
-    - name: Run tests
-      run: cargo test --verbose --no-default-features --features polars_0_46
+    - name: Build with ${{ matrix.polars_version }}
+      run: cargo build --verbose --no-default-features --features ${{ matrix.polars_version }}
+    - name: Run tests with ${{ matrix.polars_version }}
+      run: cargo test --verbose --no-default-features --features ${{ matrix.polars_version }}

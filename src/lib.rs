@@ -225,7 +225,9 @@ where
         .string_dictionary_encoding(false) // Avoid dictionary encoding which requires categorical
         .coerce_numbers(false); // Be strict about types
 
-    let fields: Vec<FieldRef> = Vec::<FieldRef>::from_type::<T>(tracing_options)?;
+    // Try from_type first for performance, fallback to from_samples for complex types like dates
+    let fields: Vec<FieldRef> = Vec::<FieldRef>::from_type::<T>(tracing_options.clone())
+        .or_else(|_| Vec::<FieldRef>::from_samples(rows, tracing_options))?;
     let rb: RecordBatch = to_record_batch(&fields, rows)?;
 
     // Convert any dictionary arrays to string arrays to avoid categorical requirements

@@ -12,7 +12,17 @@
 //! - Multi-version compatibility for Polars 0.40+ via feature flags
 //! - Thread-safe operations with comprehensive error handling
 //! - High performance with minimal allocations
+//! - **Efficient date/time handling with numeric wrapper types**
 //! - Support for both single structs and collections
+//!
+//! ## Efficient Date/Time Handling
+//!
+//! For maximum performance with dates and times, use the provided wrapper types:
+//! - [`DateWrapper`] - Converts `NaiveDate` to/from i32 (days since Unix epoch)
+//! - [`DateTimeWrapper`] - Converts `NaiveDateTime` to/from i64 (nanoseconds since Unix epoch)  
+//! - [`UtcDateTimeWrapper`] - Converts `DateTime<Utc>` to/from i64 (nanoseconds since Unix epoch)
+//!
+//! **IMPORTANT**: Raw chrono types will serialize as strings. Use wrapper types for efficiency!
 //!
 //! ## Version Compatibility
 //!
@@ -33,28 +43,39 @@
 //! ```ignore
 //! use polars::prelude::*;
 //! use serde::{Serialize, Deserialize};
-//! use serde_polars::{from_dataframe, to_dataframe};
+//! use serde_polars::{from_dataframe, to_dataframe, DateWrapper};
+//! use chrono::NaiveDate;
 //!
 //! #[derive(Debug, Serialize, Deserialize)]
 //! struct Record {
 //!     name: String,
 //!     age: i32,
+//!     birth_date: DateWrapper,  // Efficient i32 storage!
 //!     score: f64,
 //! }
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! // Create a DataFrame
-//! let df = df!(
-//!     "name" => ["Alice", "Bob", "Charlie"],
-//!     "age" => [25, 30, 35],
-//!     "score" => [85.5, 92.0, 78.3]
-//! )?;
+//! // Create records with efficient date handling
+//! let records = vec![
+//!     Record {
+//!         name: "Alice".to_string(),
+//!         age: 25,
+//!         birth_date: DateWrapper::new(NaiveDate::from_ymd_opt(1998, 5, 15).unwrap()),
+//!         score: 85.5,
+//!     },
+//!     Record {
+//!         name: "Bob".to_string(), 
+//!         age: 30,
+//!         birth_date: DateWrapper::new(NaiveDate::from_ymd_opt(1993, 8, 22).unwrap()),
+//!         score: 92.0,
+//!     },
+//! ];
 //!
-//! // Convert DataFrame to structs
-//! let records: Vec<Record> = from_dataframe(df)?;
+//! // Convert to DataFrame (birth_date will be stored as i32 - no strings!)
+//! let df = to_dataframe(&records)?;
 //!
-//! // Convert structs back to DataFrame
-//! let new_df = to_dataframe(&records)?;
+//! // Convert DataFrame back to structs
+//! let converted_back: Vec<Record> = from_dataframe(df)?;
 //! # Ok(())
 //! # }
 //! ```
@@ -95,10 +116,9 @@ use polars_crate_0_50 as polars;
 use polars::prelude::*;
 
 use arrow::compute;
-use arrow::datatypes::{DataType, Field, FieldRef};
+use arrow::datatypes::{DataType, Field, FieldRef, TimeUnit};
 use arrow::record_batch::RecordBatch;
-use arrow::array::{Array, StringArray, LargeStringArray, Date32Array};
-use chrono::NaiveDate;
+use chrono::{NaiveDate, NaiveDateTime, DateTime, Utc, Duration};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_arrow::schema::{SchemaLike, TracingOptions};
@@ -112,103 +132,304 @@ pub use error::PolarsSerdeError;
 /// Result type used throughout this crate
 pub type Result<T> = std::result::Result<T, PolarsSerdeError>;
 
-/// Helper function to convert dictionary arrays to string arrays to avoid categorical issues
-/// Converts string columns that contain date patterns to proper Arrow date types
-fn convert_date_strings_to_dates(batch: RecordBatch) -> Result<RecordBatch> {
-    let mut new_columns = Vec::new();
-    let mut new_fields = Vec::new();
-    
-    for (i, field) in batch.schema().fields().iter().enumerate() {
-        let column = batch.column(i);
-        
-        // Check if this is a string column that might contain dates
-        if matches!(column.data_type(), DataType::Utf8 | DataType::LargeUtf8) {
-            // Try to extract string values from either StringArray or LargeStringArray
-            let string_values: Vec<Option<&str>> = if let Some(string_array) = column.as_any().downcast_ref::<StringArray>() {
-                string_array.iter().collect()
-            } else if let Some(large_string_array) = column.as_any().downcast_ref::<LargeStringArray>() {
-                large_string_array.iter().collect()
-            } else {
-                Vec::new()
-            };
-            
-            if !string_values.is_empty() {
-                // Check if all non-null values look like dates (YYYY-MM-DD format)
-                let mut all_dates = true;
-                let mut sample_count = 0;
-                
-                let mut date_format = None;
-                
-                for maybe_string in string_values.iter().take(10) { // Sample first 10 values
-                    if let Some(string_val) = maybe_string {
-                        sample_count += 1;
-                        // Try to parse as different date/time formats
-                        if NaiveDate::parse_from_str(string_val, "%Y-%m-%d").is_ok() {
-                            if date_format.is_none() || date_format == Some("date") {
-                                date_format = Some("date");
-                            } else {
-                                all_dates = false;
-                                break;
-                            }
-                        // For now, only handle simple dates - datetime conversion has deserialization issues
-                        } else {
-                            all_dates = false;
-                            break;
-                        }
-                    }
-                }
-                
-                // If we found at least one value and they all parse as dates, convert
-                if all_dates && sample_count > 0 && date_format.is_some() {
-                    let format = date_format.unwrap();
-                    
-                    #[cfg(debug_assertions)]
-                    eprintln!("Converting column '{}' from string to {}", field.name(), format);
-                    
-                    match format {
-                        "date" => {
-                            // Convert to Date32 array
-                            let mut date_builder = Date32Array::builder(string_values.len());
-                            
-                            for maybe_string in string_values.iter() {
-                                if let Some(string_val) = maybe_string {
-                                    if let Ok(date) = NaiveDate::parse_from_str(string_val, "%Y-%m-%d") {
-                                        // Convert to days since Unix epoch
-                                        let days = date.signed_duration_since(NaiveDate::from_ymd_opt(1970, 1, 1).unwrap()).num_days() as i32;
-                                        date_builder.append_value(days);
-                                    } else {
-                                        date_builder.append_null();
-                                    }
-                                } else {
-                                    date_builder.append_null();
-                                }
-                            }
-                            
-                            let date_array = date_builder.finish();
-                            new_columns.push(Arc::new(date_array) as Arc<dyn Array>);
-                            new_fields.push(Field::new(field.name(), DataType::Date32, field.is_nullable()));
-                            continue;
-                        },
-                        // Datetime conversion disabled for now due to deserialization issues
-                        _ => {
-                            // Unknown format, keep as string
-                        }
-                    }
-                }
-            }
-        }
-        
-        // Not a date column, keep as-is
-        new_columns.push(column.clone());
-        new_fields.push(field.as_ref().clone());
+/// High-performance numeric conversion wrappers for chrono types
+/// 
+/// IMPORTANT: These are the ONLY supported way to handle dates/times efficiently in this library!
+/// Raw chrono types will serialize as strings - use these wrappers for maximum performance.
+
+/// Wrapper for NaiveDate that converts to/from days since Unix epoch (i32)
+/// This provides maximum efficiency for date storage in Polars DataFrames
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DateWrapper(pub NaiveDate);
+
+impl DateWrapper {
+    /// Create a new DateWrapper from a NaiveDate
+    pub fn new(date: NaiveDate) -> Self {
+        Self(date)
     }
     
-    let new_schema = Arc::new(arrow::datatypes::Schema::new(new_fields));
-    RecordBatch::try_new(new_schema, new_columns)
-        .map_err(|e| PolarsSerdeError::ConversionError { 
-            message: format!("Failed to create record batch with date conversion: {}", e) 
-        })
+    /// Get the underlying NaiveDate
+    pub fn into_inner(self) -> NaiveDate {
+        self.0
+    }
 }
+
+impl serde::Serialize for DateWrapper {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        // Convert directly to days since Unix epoch (what Polars uses internally)
+        let days = self.0.signed_duration_since(NaiveDate::from_ymd_opt(1970, 1, 1).unwrap()).num_days() as i32;
+        serializer.serialize_newtype_struct("DateWrapper", &days)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for DateWrapper {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let days = i32::deserialize(deserializer)?;
+        let date = NaiveDate::from_ymd_opt(1970, 1, 1).unwrap() + Duration::days(days as i64);
+        Ok(DateWrapper(date))
+    }
+}
+
+/// Wrapper for NaiveDateTime that converts to/from nanoseconds since Unix epoch (i64)
+/// This provides maximum efficiency for datetime storage in Polars DataFrames
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DateTimeWrapper(pub NaiveDateTime);
+
+impl DateTimeWrapper {
+    /// Create a new DateTimeWrapper from a NaiveDateTime
+    pub fn new(datetime: NaiveDateTime) -> Self {
+        Self(datetime)
+    }
+    
+    /// Get the underlying NaiveDateTime
+    pub fn into_inner(self) -> NaiveDateTime {
+        self.0
+    }
+}
+
+impl serde::Serialize for DateTimeWrapper {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        // Convert directly to nanoseconds since Unix epoch
+        let nanos = self.0.and_utc().timestamp_nanos_opt().unwrap_or(0);
+        serializer.serialize_newtype_struct("DateTimeWrapper", &nanos)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for DateTimeWrapper {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let nanos = i64::deserialize(deserializer)?;
+        let dt = DateTime::from_timestamp_nanos(nanos).naive_utc();
+        Ok(DateTimeWrapper(dt))
+    }
+}
+
+/// Wrapper for DateTime<Utc> that converts to/from nanoseconds since Unix epoch (i64)
+/// This provides maximum efficiency for UTC datetime storage in Polars DataFrames
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UtcDateTimeWrapper(pub DateTime<Utc>);
+
+impl UtcDateTimeWrapper {
+    /// Create a new UtcDateTimeWrapper from a DateTime<Utc>
+    pub fn new(datetime: DateTime<Utc>) -> Self {
+        Self(datetime)
+    }
+    
+    /// Get the underlying DateTime<Utc>
+    pub fn into_inner(self) -> DateTime<Utc> {
+        self.0
+    }
+}
+
+impl serde::Serialize for UtcDateTimeWrapper {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        // Convert directly to nanoseconds since Unix epoch
+        let nanos = self.0.timestamp_nanos_opt().unwrap_or(0);
+        serializer.serialize_newtype_struct("UtcDateTimeWrapper", &nanos)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for UtcDateTimeWrapper {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let nanos = i64::deserialize(deserializer)?;
+        let dt = DateTime::from_timestamp_nanos(nanos);
+        Ok(UtcDateTimeWrapper(dt))
+    }
+}
+
+use std::collections::HashMap;
+
+/// Schema inspector that detects wrapper types during serialization
+struct WrapperDetector {
+    field_types: HashMap<String, String>,
+    current_field: Option<String>,
+}
+
+impl WrapperDetector {
+    fn new() -> Self {
+        Self {
+            field_types: HashMap::new(),
+            current_field: None,
+        }
+    }
+}
+
+impl serde::ser::Serializer for &mut WrapperDetector {
+    type Ok = ();
+    type Error = serde_arrow::Error;
+    
+    type SerializeSeq = Self;
+    type SerializeTuple = Self;
+    type SerializeTupleStruct = Self;
+    type SerializeTupleVariant = Self;
+    type SerializeMap = Self;
+    type SerializeStruct = Self;
+    type SerializeStructVariant = Self;
+
+    fn serialize_bool(self, _v: bool) -> std::result::Result<Self::Ok, Self::Error> { Ok(()) }
+    fn serialize_i8(self, _v: i8) -> std::result::Result<Self::Ok, Self::Error> { Ok(()) }
+    fn serialize_i16(self, _v: i16) -> std::result::Result<Self::Ok, Self::Error> { Ok(()) }
+    fn serialize_i32(self, _v: i32) -> std::result::Result<Self::Ok, Self::Error> { Ok(()) }
+    fn serialize_i64(self, _v: i64) -> std::result::Result<Self::Ok, Self::Error> { Ok(()) }
+    fn serialize_u8(self, _v: u8) -> std::result::Result<Self::Ok, Self::Error> { Ok(()) }
+    fn serialize_u16(self, _v: u16) -> std::result::Result<Self::Ok, Self::Error> { Ok(()) }
+    fn serialize_u32(self, _v: u32) -> std::result::Result<Self::Ok, Self::Error> { Ok(()) }
+    fn serialize_u64(self, _v: u64) -> std::result::Result<Self::Ok, Self::Error> { Ok(()) }
+    fn serialize_f32(self, _v: f32) -> std::result::Result<Self::Ok, Self::Error> { Ok(()) }
+    fn serialize_f64(self, _v: f64) -> std::result::Result<Self::Ok, Self::Error> { Ok(()) }
+    fn serialize_char(self, _v: char) -> std::result::Result<Self::Ok, Self::Error> { Ok(()) }
+    fn serialize_str(self, _v: &str) -> std::result::Result<Self::Ok, Self::Error> { Ok(()) }
+    fn serialize_bytes(self, _v: &[u8]) -> std::result::Result<Self::Ok, Self::Error> { Ok(()) }
+    fn serialize_none(self) -> std::result::Result<Self::Ok, Self::Error> { Ok(()) }
+    fn serialize_some<T: ?Sized>(self, value: &T) -> std::result::Result<Self::Ok, Self::Error> 
+    where T: serde::Serialize {
+        value.serialize(self)
+    }
+    fn serialize_unit(self) -> std::result::Result<Self::Ok, Self::Error> { Ok(()) }
+    fn serialize_unit_struct(self, _name: &'static str) -> std::result::Result<Self::Ok, Self::Error> { Ok(()) }
+    fn serialize_unit_variant(self, _name: &'static str, _variant_index: u32, _variant: &'static str) -> std::result::Result<Self::Ok, Self::Error> { Ok(()) }
+    
+    fn serialize_newtype_struct<T: ?Sized>(self, name: &'static str, value: &T) -> std::result::Result<Self::Ok, Self::Error>
+    where T: serde::Serialize {
+        // This is where we detect our wrapper types!
+        if let Some(field_name) = &self.current_field {
+            self.field_types.insert(field_name.clone(), name.to_string());
+        }
+        value.serialize(self)
+    }
+    
+    fn serialize_newtype_variant<T: ?Sized>(self, _name: &'static str, _variant_index: u32, _variant: &'static str, value: &T) -> std::result::Result<Self::Ok, Self::Error>
+    where T: serde::Serialize {
+        value.serialize(self)
+    }
+    fn serialize_seq(self, _len: Option<usize>) -> std::result::Result<Self::SerializeSeq, Self::Error> { Ok(self) }
+    fn serialize_tuple(self, _len: usize) -> std::result::Result<Self::SerializeTuple, Self::Error> { Ok(self) }
+    fn serialize_tuple_struct(self, _name: &'static str, _len: usize) -> std::result::Result<Self::SerializeTupleStruct, Self::Error> { Ok(self) }
+    fn serialize_tuple_variant(self, _name: &'static str, _variant_index: u32, _variant: &'static str, _len: usize) -> std::result::Result<Self::SerializeTupleVariant, Self::Error> { Ok(self) }
+    fn serialize_map(self, _len: Option<usize>) -> std::result::Result<Self::SerializeMap, Self::Error> { Ok(self) }
+    fn serialize_struct(self, _name: &'static str, _len: usize) -> std::result::Result<Self::SerializeStruct, Self::Error> { Ok(self) }
+    fn serialize_struct_variant(self, _name: &'static str, _variant_index: u32, _variant: &'static str, _len: usize) -> std::result::Result<Self::SerializeStructVariant, Self::Error> { Ok(self) }
+}
+
+// Implement the compound serialization traits
+macro_rules! impl_serialize_compound {
+    ($trait:ident, $method:ident) => {
+        impl serde::ser::$trait for &mut WrapperDetector {
+            type Ok = ();
+            type Error = serde_arrow::Error;
+            fn $method<T: ?Sized>(&mut self, value: &T) -> std::result::Result<(), Self::Error> 
+            where T: serde::Serialize { 
+                value.serialize(&mut **self)
+            }
+            fn end(self) -> std::result::Result<Self::Ok, Self::Error> { Ok(()) }
+        }
+    };
+}
+
+impl_serialize_compound!(SerializeSeq, serialize_element);
+impl_serialize_compound!(SerializeTuple, serialize_element);
+impl_serialize_compound!(SerializeTupleStruct, serialize_field);
+impl_serialize_compound!(SerializeTupleVariant, serialize_field);
+
+impl serde::ser::SerializeMap for &mut WrapperDetector {
+    type Ok = ();
+    type Error = serde_arrow::Error;
+    fn serialize_key<T: ?Sized>(&mut self, key: &T) -> std::result::Result<(), Self::Error> 
+    where T: serde::Serialize { 
+        key.serialize(&mut **self)
+    }
+    fn serialize_value<T: ?Sized>(&mut self, value: &T) -> std::result::Result<(), Self::Error> 
+    where T: serde::Serialize { 
+        value.serialize(&mut **self)
+    }
+    fn end(self) -> std::result::Result<Self::Ok, Self::Error> { Ok(()) }
+}
+
+impl serde::ser::SerializeStruct for &mut WrapperDetector {
+    type Ok = ();
+    type Error = serde_arrow::Error;
+    
+    fn serialize_field<T: ?Sized>(&mut self, key: &'static str, value: &T) -> std::result::Result<(), Self::Error> 
+    where T: serde::Serialize {
+        self.current_field = Some(key.to_string());
+        value.serialize(&mut **self)?;
+        self.current_field = None;
+        Ok(())
+    }
+    
+    fn end(self) -> std::result::Result<Self::Ok, Self::Error> { Ok(()) }
+}
+
+impl serde::ser::SerializeStructVariant for &mut WrapperDetector {
+    type Ok = ();
+    type Error = serde_arrow::Error;
+    fn serialize_field<T: ?Sized>(&mut self, key: &'static str, value: &T) -> std::result::Result<(), Self::Error> 
+    where T: serde::Serialize {
+        self.current_field = Some(key.to_string());
+        value.serialize(&mut **self)?;
+        self.current_field = None;
+        Ok(())
+    }
+    fn end(self) -> std::result::Result<Self::Ok, Self::Error> { Ok(()) }
+}
+
+/// Detect wrapper types in a struct by examining serialization
+fn detect_wrapper_types<T: Serialize>(sample: &T) -> std::result::Result<HashMap<String, String>, serde_arrow::Error> {
+    let mut detector = WrapperDetector::new();
+    sample.serialize(&mut detector)?;
+    Ok(detector.field_types)
+}
+
+/// Convert detected wrapper fields to proper Arrow date types
+fn enhance_schema_for_wrappers(
+    mut fields: Vec<FieldRef>,
+    wrapper_types: &HashMap<String, String>
+) -> Vec<FieldRef> {
+    for field_index in 0..fields.len() {
+        let field = &fields[field_index];
+        let field_name = field.name();
+        
+        if let Some(wrapper_type) = wrapper_types.get(field_name) {
+            match wrapper_type.as_str() {
+                "DateWrapper" => {
+                    fields[field_index] = Arc::new(Field::new(
+                        field_name,
+                        DataType::Date32,
+                        field.is_nullable()
+                    ));
+                },
+                "DateTimeWrapper" | "UtcDateTimeWrapper" => {
+                    fields[field_index] = Arc::new(Field::new(
+                        field_name,
+                        DataType::Timestamp(TimeUnit::Nanosecond, None),
+                        field.is_nullable()
+                    ));
+                },
+                _ => {}
+            }
+        }
+    }
+    fields
+}
+
+/// Helper function to convert dictionary arrays to string arrays to avoid categorical issues
 
 fn convert_dictionary_to_strings(batch: RecordBatch) -> Result<RecordBatch> {
     let mut new_columns = Vec::new();
@@ -324,21 +545,31 @@ where
         .string_dictionary_encoding(false) // Avoid dictionary encoding which requires categorical
         .coerce_numbers(false); // Be strict about types
 
-    // Try from_type first for performance, fallback to from_samples for complex types like dates
-    let fields: Vec<FieldRef> = Vec::<FieldRef>::from_type::<T>(tracing_options.clone())
-        .or_else(|_| Vec::<FieldRef>::from_samples(rows, tracing_options))?;
+    // Get basic schema generation
+    let basic_fields: Vec<FieldRef> = match Vec::<FieldRef>::from_type::<T>(tracing_options.clone()) {
+        Ok(basic_fields) => basic_fields,
+        Err(_) => {
+            // Fallback to samples-based schema generation
+            Vec::<FieldRef>::from_samples(rows, tracing_options)?
+        }
+    };
+
+    // Detect wrapper types and enhance schema  
+    let wrapper_types = detect_wrapper_types(&rows[0]).map_err(|e| PolarsSerdeError::ConversionError {
+        message: format!("Failed to detect wrapper types: {}", e),
+    })?;
+    
+    let fields = enhance_schema_for_wrappers(basic_fields, &wrapper_types);
+
     let rb: RecordBatch = to_record_batch(&fields, rows)?;
 
     // Convert any dictionary arrays to string arrays to avoid categorical requirements
-    let mut converted_rb = convert_dictionary_to_strings(rb)?;
-    
-    // Convert date-like string columns to proper Arrow date types
-    // Only convert simple date formats to avoid deserialization issues
-    converted_rb = convert_date_strings_to_dates(converted_rb)?;
+    let converted_rb = convert_dictionary_to_strings(rb)?;
 
     let df: DataFrame = version_compat::arrow_to_dataframe(vec![converted_rb])?;
     Ok(df)
 }
+
 
 #[cfg(test)]
 mod tests {

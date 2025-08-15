@@ -97,6 +97,8 @@ use polars::prelude::*;
 use arrow::compute;
 use arrow::datatypes::{DataType, Field, FieldRef};
 use arrow::record_batch::RecordBatch;
+use arrow::array::{Array, StringArray, LargeStringArray, Date32Array};
+use chrono::NaiveDate;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_arrow::schema::{SchemaLike, TracingOptions};
@@ -111,6 +113,103 @@ pub use error::PolarsSerdeError;
 pub type Result<T> = std::result::Result<T, PolarsSerdeError>;
 
 /// Helper function to convert dictionary arrays to string arrays to avoid categorical issues
+/// Converts string columns that contain date patterns to proper Arrow date types
+fn convert_date_strings_to_dates(batch: RecordBatch) -> Result<RecordBatch> {
+    let mut new_columns = Vec::new();
+    let mut new_fields = Vec::new();
+    
+    for (i, field) in batch.schema().fields().iter().enumerate() {
+        let column = batch.column(i);
+        
+        // Check if this is a string column that might contain dates
+        if matches!(column.data_type(), DataType::Utf8 | DataType::LargeUtf8) {
+            // Try to extract string values from either StringArray or LargeStringArray
+            let string_values: Vec<Option<&str>> = if let Some(string_array) = column.as_any().downcast_ref::<StringArray>() {
+                string_array.iter().collect()
+            } else if let Some(large_string_array) = column.as_any().downcast_ref::<LargeStringArray>() {
+                large_string_array.iter().collect()
+            } else {
+                Vec::new()
+            };
+            
+            if !string_values.is_empty() {
+                // Check if all non-null values look like dates (YYYY-MM-DD format)
+                let mut all_dates = true;
+                let mut sample_count = 0;
+                
+                let mut date_format = None;
+                
+                for maybe_string in string_values.iter().take(10) { // Sample first 10 values
+                    if let Some(string_val) = maybe_string {
+                        sample_count += 1;
+                        // Try to parse as different date/time formats
+                        if NaiveDate::parse_from_str(string_val, "%Y-%m-%d").is_ok() {
+                            if date_format.is_none() || date_format == Some("date") {
+                                date_format = Some("date");
+                            } else {
+                                all_dates = false;
+                                break;
+                            }
+                        // For now, only handle simple dates - datetime conversion has deserialization issues
+                        } else {
+                            all_dates = false;
+                            break;
+                        }
+                    }
+                }
+                
+                // If we found at least one value and they all parse as dates, convert
+                if all_dates && sample_count > 0 && date_format.is_some() {
+                    let format = date_format.unwrap();
+                    
+                    #[cfg(debug_assertions)]
+                    eprintln!("Converting column '{}' from string to {}", field.name(), format);
+                    
+                    match format {
+                        "date" => {
+                            // Convert to Date32 array
+                            let mut date_builder = Date32Array::builder(string_values.len());
+                            
+                            for maybe_string in string_values.iter() {
+                                if let Some(string_val) = maybe_string {
+                                    if let Ok(date) = NaiveDate::parse_from_str(string_val, "%Y-%m-%d") {
+                                        // Convert to days since Unix epoch
+                                        let days = date.signed_duration_since(NaiveDate::from_ymd_opt(1970, 1, 1).unwrap()).num_days() as i32;
+                                        date_builder.append_value(days);
+                                    } else {
+                                        date_builder.append_null();
+                                    }
+                                } else {
+                                    date_builder.append_null();
+                                }
+                            }
+                            
+                            let date_array = date_builder.finish();
+                            new_columns.push(Arc::new(date_array) as Arc<dyn Array>);
+                            new_fields.push(Field::new(field.name(), DataType::Date32, field.is_nullable()));
+                            continue;
+                        },
+                        // Datetime conversion disabled for now due to deserialization issues
+                        _ => {
+                            // Unknown format, keep as string
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Not a date column, keep as-is
+        new_columns.push(column.clone());
+        new_fields.push(field.as_ref().clone());
+    }
+    
+    let new_schema = Arc::new(arrow::datatypes::Schema::new(new_fields));
+    RecordBatch::try_new(new_schema, new_columns)
+        .map_err(|e| PolarsSerdeError::ConversionError { 
+            message: format!("Failed to create record batch with date conversion: {}", e) 
+        })
+}
+
 fn convert_dictionary_to_strings(batch: RecordBatch) -> Result<RecordBatch> {
     let mut new_columns = Vec::new();
     let mut new_fields = Vec::new();
@@ -231,7 +330,11 @@ where
     let rb: RecordBatch = to_record_batch(&fields, rows)?;
 
     // Convert any dictionary arrays to string arrays to avoid categorical requirements
-    let converted_rb = convert_dictionary_to_strings(rb)?;
+    let mut converted_rb = convert_dictionary_to_strings(rb)?;
+    
+    // Convert date-like string columns to proper Arrow date types
+    // Only convert simple date formats to avoid deserialization issues
+    converted_rb = convert_date_strings_to_dates(converted_rb)?;
 
     let df: DataFrame = version_compat::arrow_to_dataframe(vec![converted_rb])?;
     Ok(df)

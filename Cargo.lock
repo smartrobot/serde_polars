@@ -7988,7 +7988,7 @@ dependencies = [
 
 [[package]]
 name = "serde_polars"
-version = "0.1.2"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "arrow",
@@ -8008,6 +8008,7 @@ dependencies = [
  "polars 0.50.0",
  "serde",
  "serde_arrow",
+ "serde_json",
  "tempfile",
  "thiserror 1.0.69",
  "tokio",

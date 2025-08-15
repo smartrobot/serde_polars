@@ -1,18 +1,18 @@
 [package]
 name = "serde_polars"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2021"
-authors = ["Your Name <your.email@example.com>"]
-description = "High-performance serde integration for Polars DataFrames"
+authors = ["Nick Kracht <Nick.a.kracht@gmail.com>"]
+description = "High-performance serde integration for Polars DataFrames with date/time support"
 license = "MIT"
-repository = "https://github.com/your-username/serde_polars"
+repository = "https://github.com/Smartrobot/serde_polars"
 documentation = "https://docs.rs/serde_polars"
 keywords = ["polars", "serde", "dataframe", "serialization", "arrow"]
 categories = ["data-structures", "encoding", "science"]
 readme = "README.md"
 
 [dependencies]
-# User must include this in their Cargo.toml - we just specify minimum requirement
+# User must include this in their Cargo.toml - we just specify a minimum requirement
 polars_crate_0_40 = { package = "polars", version = "0.40", optional = true}
 polars_crate_0_41 = { package = "polars", version = "0.41", optional = true}
 polars_crate_0_42 = { package = "polars", version = "0.42", optional = true}
@@ -38,6 +38,7 @@ tokio = { version = "1.0", features = ["macros", "rt-multi-thread"] }
 criterion = { version = "0.5", features = ["html_reports"] }
 tempfile = "3.0"
 anyhow = "1.0"
+serde_json = "1.0"
 
 # Configure benchmarks
 [[bench]]

@@ -21,7 +21,7 @@ use polars_crate_0_44 as polars;
 use polars_crate_0_45 as polars;
 
 #[cfg(feature = "polars_0_46")]
-use polars_crate_0_46 as _polars;
+use polars_crate_0_46 as polars;
 
 #[cfg(feature = "polars_0_47")]
 use polars_crate_0_47 as polars;
@@ -34,6 +34,40 @@ use polars_crate_0_49 as polars;
 
 #[cfg(feature = "polars_0_50")]
 use polars_crate_0_50 as polars;
+
+// Import DataType for tests
+#[cfg(feature = "polars_0_40")]
+use polars_crate_0_40::datatypes::DataType;
+
+#[cfg(feature = "polars_0_41")]
+use polars_crate_0_41::datatypes::DataType;
+
+#[cfg(feature = "polars_0_42")]
+use polars_crate_0_42::datatypes::DataType;
+
+#[cfg(feature = "polars_0_43")]
+use polars_crate_0_43::datatypes::DataType;
+
+#[cfg(feature = "polars_0_44")]
+use polars_crate_0_44::datatypes::DataType;
+
+#[cfg(feature = "polars_0_45")]
+use polars_crate_0_45::datatypes::DataType;
+
+#[cfg(feature = "polars_0_46")]
+use polars_crate_0_46::datatypes::DataType;
+
+#[cfg(feature = "polars_0_47")]
+use polars_crate_0_47::datatypes::DataType;
+
+#[cfg(feature = "polars_0_48")]
+use polars_crate_0_48::datatypes::DataType;
+
+#[cfg(feature = "polars_0_49")]
+use polars_crate_0_49::datatypes::DataType;
+
+#[cfg(feature = "polars_0_50")]
+use polars_crate_0_50::datatypes::DataType;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 struct PersonWithDate {
@@ -102,6 +136,10 @@ fn test_naive_date_roundtrip() {
     assert_eq!(df.height(), 3);
     assert_eq!(df.width(), 3);
     
+    // Verify that the birth_date column is a proper Date type, not String
+    let birth_date_column = df.column("birth_date").unwrap();
+    assert_eq!(birth_date_column.dtype(), &DataType::Date);
+    
     // Convert back to structs
     let converted_back: Vec<PersonWithDate> = from_dataframe(df).unwrap();
     
@@ -133,6 +171,9 @@ fn test_naive_datetime_roundtrip() {
     assert_eq!(df.height(), 2);
     assert_eq!(df.width(), 3);
     
+    // Note: DateTime conversion is currently disabled due to deserialization issues
+    // So event_datetime will remain as String type for now
+    
     // Convert back to structs
     let converted_back: Vec<EventRecord> = from_dataframe(df).unwrap();
     
@@ -161,6 +202,8 @@ fn test_datetime_utc_roundtrip() {
     // Verify the DataFrame was created successfully
     assert_eq!(df.height(), 2);
     assert_eq!(df.width(), 3);
+    
+    // Note: DateTime<Utc> conversion is currently disabled, so it remains as String
     
     // Convert back to structs
     let converted_back: Vec<TimestampRecord> = from_dataframe(df).unwrap();
@@ -201,6 +244,12 @@ fn test_mixed_temporal_types() {
     assert_eq!(df.height(), 2);
     assert_eq!(df.width(), 7);
     
+    // Verify that birth_date is converted to proper Date type
+    let birth_date_column = df.column("birth_date").unwrap();
+    assert_eq!(birth_date_column.dtype(), &DataType::Date);
+    
+    // Note: Other datetime fields remain as String for now
+    
     // Convert back to structs
     let converted_back: Vec<MixedTemporalRecord> = from_dataframe(df).unwrap();
     
@@ -239,6 +288,10 @@ fn test_optional_dates() {
     assert_eq!(df.height(), 3);
     assert_eq!(df.width(), 4);
     
+    // Verify that birth_date is converted to proper Date type (even when optional)
+    let birth_date_column = df.column("birth_date").unwrap();
+    assert_eq!(birth_date_column.dtype(), &DataType::Date);
+    
     // Convert back to structs
     let converted_back: Vec<OptionalDateRecord> = from_dataframe(df).unwrap();
     
@@ -271,6 +324,10 @@ fn test_single_date_record() {
     // Verify the DataFrame was created successfully
     assert_eq!(df.height(), 1);
     assert_eq!(df.width(), 3);
+    
+    // Verify that birth_date is converted to proper Date type
+    let birth_date_column = df.column("birth_date").unwrap();
+    assert_eq!(birth_date_column.dtype(), &DataType::Date);
     
     // Convert back to structs
     let converted_back: Vec<PersonWithDate> = from_dataframe(df).unwrap();

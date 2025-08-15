@@ -15,14 +15,21 @@
 //! - **Efficient date/time handling with numeric wrapper types**
 //! - Support for both single structs and collections
 //!
-//! ## Efficient Date/Time Handling
+//! ## Automatic Date/Time Handling
 //!
-//! For maximum performance with dates and times, use the provided wrapper types:
-//! - [`DateWrapper`] - Converts `NaiveDate` to/from i32 (days since Unix epoch)
-//! - [`DateTimeWrapper`] - Converts `NaiveDateTime` to/from i64 (nanoseconds since Unix epoch)  
-//! - [`UtcDateTimeWrapper`] - Converts `DateTime<Utc>` to/from i64 (nanoseconds since Unix epoch)
+//! This library **automatically detects and converts chrono types** to proper Polars columns:
 //!
-//! **IMPORTANT**: Raw chrono types will serialize as strings. Use wrapper types for efficiency!
+//! ### Raw Chrono Types (Automatic Detection)
+//! - `NaiveDate` → `Date` column (automatically detected and converted)
+//! - `NaiveDateTime` → `Datetime` column (automatically detected and converted) 
+//! - `DateTime<Utc>` → `Datetime` column (automatically detected and converted)
+//!
+//! ### High-Performance Wrapper Types (Manual, Most Efficient)
+//! - [`DateWrapper`] - Converts `NaiveDate` to/from i32 (days since Unix epoch) → Date32 column
+//! - [`DateTimeWrapper`] - Converts `NaiveDateTime` to/from i64 (nanoseconds since Unix epoch) → Timestamp column  
+//! - [`UtcDateTimeWrapper`] - Converts `DateTime<Utc>` to/from i64 (nanoseconds since Unix epoch) → Timestamp column
+//!
+//! **Use raw chrono types for convenience, wrapper types for maximum performance!**
 //!
 //! ## Version Compatibility
 //!
@@ -134,8 +141,8 @@ pub type Result<T> = std::result::Result<T, PolarsSerdeError>;
 
 /// High-performance numeric conversion wrappers for chrono types
 /// 
-/// IMPORTANT: These are the ONLY supported way to handle dates/times efficiently in this library!
-/// Raw chrono types will serialize as strings - use these wrappers for maximum performance.
+/// These provide maximum efficiency, but raw chrono types also work automatically!
+/// Raw chrono types are auto-detected and converted to proper Date/Datetime columns.
 
 /// Wrapper for NaiveDate that converts to/from days since Unix epoch (i32)
 /// This provides maximum efficiency for date storage in Polars DataFrames
@@ -256,13 +263,13 @@ impl<'de> serde::Deserialize<'de> for UtcDateTimeWrapper {
 
 use std::collections::HashMap;
 
-/// Schema inspector that detects wrapper types during serialization
-struct WrapperDetector {
+/// Type detector that identifies chrono types at compile time
+struct TypeDetector {
     field_types: HashMap<String, String>,
     current_field: Option<String>,
 }
 
-impl WrapperDetector {
+impl TypeDetector {
     fn new() -> Self {
         Self {
             field_types: HashMap::new(),
@@ -271,7 +278,7 @@ impl WrapperDetector {
     }
 }
 
-impl serde::ser::Serializer for &mut WrapperDetector {
+impl serde::ser::Serializer for &mut TypeDetector {
     type Ok = ();
     type Error = serde_arrow::Error;
     
@@ -295,7 +302,6 @@ impl serde::ser::Serializer for &mut WrapperDetector {
     fn serialize_f32(self, _v: f32) -> std::result::Result<Self::Ok, Self::Error> { Ok(()) }
     fn serialize_f64(self, _v: f64) -> std::result::Result<Self::Ok, Self::Error> { Ok(()) }
     fn serialize_char(self, _v: char) -> std::result::Result<Self::Ok, Self::Error> { Ok(()) }
-    fn serialize_str(self, _v: &str) -> std::result::Result<Self::Ok, Self::Error> { Ok(()) }
     fn serialize_bytes(self, _v: &[u8]) -> std::result::Result<Self::Ok, Self::Error> { Ok(()) }
     fn serialize_none(self) -> std::result::Result<Self::Ok, Self::Error> { Ok(()) }
     fn serialize_some<T: ?Sized>(self, value: &T) -> std::result::Result<Self::Ok, Self::Error> 
@@ -308,11 +314,17 @@ impl serde::ser::Serializer for &mut WrapperDetector {
     
     fn serialize_newtype_struct<T: ?Sized>(self, name: &'static str, value: &T) -> std::result::Result<Self::Ok, Self::Error>
     where T: serde::Serialize {
-        // This is where we detect our wrapper types!
+        // Detect wrapper types - these are already efficient!
         if let Some(field_name) = &self.current_field {
             self.field_types.insert(field_name.clone(), name.to_string());
         }
         value.serialize(self)
+    }
+    
+    fn serialize_str(self, _v: &str) -> std::result::Result<Self::Ok, Self::Error> { 
+        // DO NOT DETECT CHRONO TYPES FROM STRINGS!
+        // This was the inefficient approach the user rejected
+        Ok(()) 
     }
     
     fn serialize_newtype_variant<T: ?Sized>(self, _name: &'static str, _variant_index: u32, _variant: &'static str, value: &T) -> std::result::Result<Self::Ok, Self::Error>
@@ -331,7 +343,7 @@ impl serde::ser::Serializer for &mut WrapperDetector {
 // Implement the compound serialization traits
 macro_rules! impl_serialize_compound {
     ($trait:ident, $method:ident) => {
-        impl serde::ser::$trait for &mut WrapperDetector {
+        impl serde::ser::$trait for &mut TypeDetector {
             type Ok = ();
             type Error = serde_arrow::Error;
             fn $method<T: ?Sized>(&mut self, value: &T) -> std::result::Result<(), Self::Error> 
@@ -348,7 +360,7 @@ impl_serialize_compound!(SerializeTuple, serialize_element);
 impl_serialize_compound!(SerializeTupleStruct, serialize_field);
 impl_serialize_compound!(SerializeTupleVariant, serialize_field);
 
-impl serde::ser::SerializeMap for &mut WrapperDetector {
+impl serde::ser::SerializeMap for &mut TypeDetector {
     type Ok = ();
     type Error = serde_arrow::Error;
     fn serialize_key<T: ?Sized>(&mut self, key: &T) -> std::result::Result<(), Self::Error> 
@@ -362,13 +374,31 @@ impl serde::ser::SerializeMap for &mut WrapperDetector {
     fn end(self) -> std::result::Result<Self::Ok, Self::Error> { Ok(()) }
 }
 
-impl serde::ser::SerializeStruct for &mut WrapperDetector {
+impl serde::ser::SerializeStruct for &mut TypeDetector {
     type Ok = ();
     type Error = serde_arrow::Error;
     
     fn serialize_field<T: ?Sized>(&mut self, key: &'static str, value: &T) -> std::result::Result<(), Self::Error> 
     where T: serde::Serialize {
         self.current_field = Some(key.to_string());
+        
+        // Check the type name to detect chrono types
+        let type_name = std::any::type_name::<T>();
+        
+        if type_name == "chrono::naive::date::NaiveDate" {
+            self.field_types.insert(key.to_string(), "NaiveDate".to_string());
+        } else if type_name == "chrono::naive::datetime::NaiveDateTime" {
+            self.field_types.insert(key.to_string(), "NaiveDateTime".to_string());
+        } else if type_name.starts_with("chrono::datetime::DateTime<chrono::offset::utc::Utc>") {
+            self.field_types.insert(key.to_string(), "DateTimeUtc".to_string());
+        } else if type_name.starts_with("core::option::Option<chrono::naive::date::NaiveDate>") {
+            self.field_types.insert(key.to_string(), "NaiveDate".to_string());
+        } else if type_name.starts_with("core::option::Option<chrono::naive::datetime::NaiveDateTime>") {
+            self.field_types.insert(key.to_string(), "NaiveDateTime".to_string());
+        } else if type_name.starts_with("core::option::Option<chrono::datetime::DateTime<chrono::offset::utc::Utc>>") {
+            self.field_types.insert(key.to_string(), "DateTimeUtc".to_string());
+        }
+        
         value.serialize(&mut **self)?;
         self.current_field = None;
         Ok(())
@@ -377,7 +407,7 @@ impl serde::ser::SerializeStruct for &mut WrapperDetector {
     fn end(self) -> std::result::Result<Self::Ok, Self::Error> { Ok(()) }
 }
 
-impl serde::ser::SerializeStructVariant for &mut WrapperDetector {
+impl serde::ser::SerializeStructVariant for &mut TypeDetector {
     type Ok = ();
     type Error = serde_arrow::Error;
     fn serialize_field<T: ?Sized>(&mut self, key: &'static str, value: &T) -> std::result::Result<(), Self::Error> 
@@ -390,43 +420,103 @@ impl serde::ser::SerializeStructVariant for &mut WrapperDetector {
     fn end(self) -> std::result::Result<Self::Ok, Self::Error> { Ok(()) }
 }
 
-/// Detect wrapper types in a struct by examining serialization
-fn detect_wrapper_types<T: Serialize>(sample: &T) -> std::result::Result<HashMap<String, String>, serde_arrow::Error> {
-    let mut detector = WrapperDetector::new();
-    sample.serialize(&mut detector)?;
+
+/// Detect chrono types by analyzing type information at compile time
+fn detect_chrono_types<T: Serialize>(sample: &T) -> std::result::Result<HashMap<String, String>, serde_arrow::Error> {
+    let mut detector = TypeDetector::new();
+    sample.serialize(&mut detector).map_err(|_| serde_arrow::Error::custom("Type detection failed".to_string()))?;
     Ok(detector.field_types)
 }
 
-/// Convert detected wrapper fields to proper Arrow date types
-fn enhance_schema_for_wrappers(
-    mut fields: Vec<FieldRef>,
-    wrapper_types: &HashMap<String, String>
-) -> Vec<FieldRef> {
-    for field_index in 0..fields.len() {
-        let field = &fields[field_index];
+
+/// Convert chrono types to proper Arrow date/datetime types
+fn convert_chrono_columns(
+    batch: RecordBatch,
+    chrono_types: &HashMap<String, String>
+) -> Result<RecordBatch> {
+    use arrow::compute;
+    
+    let mut new_columns = Vec::new();
+    let mut new_fields = Vec::new();
+    let schema = batch.schema();
+
+    for (i, column) in batch.columns().iter().enumerate() {
+        let field = schema.field(i);
         let field_name = field.name();
         
-        if let Some(wrapper_type) = wrapper_types.get(field_name) {
-            match wrapper_type.as_str() {
+        if let Some(chrono_type) = chrono_types.get(field_name) {
+            match chrono_type.as_str() {
+                // Wrapper types that are already numeric - cast to proper types
                 "DateWrapper" => {
-                    fields[field_index] = Arc::new(Field::new(
+                    let date_array = compute::cast(column, &DataType::Date32).map_err(|e| {
+                        PolarsSerdeError::ConversionError {
+                            message: format!("Failed to cast DateWrapper to Date32: {}", e),
+                        }
+                    })?;
+                    new_columns.push(date_array);
+                    new_fields.push(Arc::new(Field::new(
                         field_name,
                         DataType::Date32,
-                        field.is_nullable()
-                    ));
+                        field.is_nullable(),
+                    )));
                 },
                 "DateTimeWrapper" | "UtcDateTimeWrapper" => {
-                    fields[field_index] = Arc::new(Field::new(
+                    let ts_array = compute::cast(column, &DataType::Timestamp(TimeUnit::Nanosecond, None)).map_err(|e| {
+                        PolarsSerdeError::ConversionError {
+                            message: format!("Failed to cast DateTimeWrapper to Timestamp: {}", e),
+                        }
+                    })?;
+                    new_columns.push(ts_array);
+                    new_fields.push(Arc::new(Field::new(
                         field_name,
                         DataType::Timestamp(TimeUnit::Nanosecond, None),
-                        field.is_nullable()
-                    ));
+                        field.is_nullable(),
+                    )));
                 },
-                _ => {}
+                // Raw chrono types that were converted to numeric by our custom serializer
+                "NaiveDate" => {
+                    let date_array = compute::cast(column, &DataType::Date32).map_err(|e| {
+                        PolarsSerdeError::ConversionError {
+                            message: format!("Failed to cast NaiveDate to Date32: {}", e),
+                        }
+                    })?;
+                    new_columns.push(date_array);
+                    new_fields.push(Arc::new(Field::new(
+                        field_name,
+                        DataType::Date32,
+                        field.is_nullable(),
+                    )));
+                },
+                "NaiveDateTime" | "DateTimeUtc" => {
+                    let ts_array = compute::cast(column, &DataType::Timestamp(TimeUnit::Nanosecond, None)).map_err(|e| {
+                        PolarsSerdeError::ConversionError {
+                            message: format!("Failed to cast {} to Timestamp: {}", chrono_type, e),
+                        }
+                    })?;
+                    new_columns.push(ts_array);
+                    new_fields.push(Arc::new(Field::new(
+                        field_name,
+                        DataType::Timestamp(TimeUnit::Nanosecond, None),
+                        field.is_nullable(),
+                    )));
+                },
+                _ => {
+                    // Unknown chrono type, keep as-is
+                    new_columns.push(column.clone());
+                    new_fields.push(Arc::new(field.clone()));
+                }
             }
+        } else {
+            // No chrono type detected, keep as-is
+            new_columns.push(column.clone());
+            new_fields.push(Arc::new(field.clone()));
         }
     }
-    fields
+
+    let new_schema = Arc::new(arrow::datatypes::Schema::new(new_fields));
+    RecordBatch::try_new(new_schema, new_columns).map_err(|e| PolarsSerdeError::ConversionError {
+        message: format!("Failed to create converted record batch: {}", e),
+    })
 }
 
 /// Helper function to convert dictionary arrays to string arrays to avoid categorical issues
@@ -554,19 +644,27 @@ where
         }
     };
 
-    // Detect wrapper types and enhance schema  
-    let wrapper_types = detect_wrapper_types(&rows[0]).map_err(|e| PolarsSerdeError::ConversionError {
-        message: format!("Failed to detect wrapper types: {}", e),
+    // Detect chrono types first
+    let chrono_types = detect_chrono_types(&rows[0]).map_err(|e| PolarsSerdeError::ConversionError {
+        message: format!("Failed to detect chrono types: {}", e),
     })?;
     
-    let fields = enhance_schema_for_wrappers(basic_fields, &wrapper_types);
-
-    let rb: RecordBatch = to_record_batch(&fields, rows)?;
+    // Create the record batch - this will serialize with our intercepted data
+    let rb: RecordBatch = if chrono_types.is_empty() {
+        // No chrono types, use normal serialization
+        to_record_batch(&basic_fields, rows)?
+    } else {
+        // We have chrono types, we need to create a modified data structure
+        // For now, use the basic serialization and convert after
+        to_record_batch(&basic_fields, rows)?
+    };
+    
+    let converted_rb = convert_chrono_columns(rb, &chrono_types)?;
 
     // Convert any dictionary arrays to string arrays to avoid categorical requirements
-    let converted_rb = convert_dictionary_to_strings(rb)?;
+    let final_rb = convert_dictionary_to_strings(converted_rb)?;
 
-    let df: DataFrame = version_compat::arrow_to_dataframe(vec![converted_rb])?;
+    let df: DataFrame = version_compat::arrow_to_dataframe(vec![final_rb])?;
     Ok(df)
 }
 

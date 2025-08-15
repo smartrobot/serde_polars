@@ -136,10 +136,9 @@ fn test_naive_date_roundtrip() {
     assert_eq!(df.height(), 3);
     assert_eq!(df.width(), 3);
     
-    // Note: Raw NaiveDate types serialize as strings
-    // Use DateWrapper for direct Date type conversion
+    // SUCCESS: Raw NaiveDate types are now automatically detected and converted to Date!
     let birth_date_column = df.column("birth_date").unwrap();
-    assert_eq!(birth_date_column.dtype(), &DataType::String);
+    assert_eq!(birth_date_column.dtype(), &DataType::Date);
     
     // Convert back to structs
     let converted_back: Vec<PersonWithDate> = from_dataframe(df).unwrap();

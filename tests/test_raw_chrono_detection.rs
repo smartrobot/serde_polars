@@ -6,6 +6,9 @@ use serde_polars::to_dataframe;
 #[cfg(feature = "polars_0_46")]
 use polars_crate_0_46::datatypes::DataType;
 
+#[cfg(feature = "polars_0_50")]
+use polars_crate_0_50::datatypes::DataType;
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 struct Calendar {
     cal: NaiveDate,  // Raw NaiveDate - should be detected as Date!

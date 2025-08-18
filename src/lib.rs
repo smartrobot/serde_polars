@@ -120,7 +120,7 @@ use polars::prelude::*;
 use arrow::compute;
 use arrow::datatypes::{DataType, Field, FieldRef, TimeUnit};
 use arrow::record_batch::RecordBatch;
-use chrono::{NaiveDate, NaiveDateTime, DateTime, Duration};
+use chrono::{NaiveDate, NaiveDateTime, DateTime, Utc, Duration};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_arrow::schema::{SchemaLike, TracingOptions};
@@ -550,6 +550,9 @@ fn convert_from_chrono_columns(
     batch: RecordBatch,
 ) -> Result<RecordBatch> {
     
+    eprintln!("DEBUG: convert_from_chrono_columns - Input batch has {} rows, {} columns", 
+             batch.num_rows(), batch.num_columns());
+    
     let mut new_columns = Vec::new();
     let mut new_fields = Vec::new();
     let schema = batch.schema();
@@ -558,6 +561,8 @@ fn convert_from_chrono_columns(
         let field = schema.field(i);
         let field_name = field.name();
         
+        eprintln!("DEBUG: Processing column '{}' with type {:?}, {} rows", 
+                 field_name, field.data_type(), column.len());
         
         // Convert Date32 and Timestamp columns back to strings for serde_arrow compatibility
         match field.data_type() {
@@ -604,9 +609,14 @@ fn convert_from_chrono_columns(
     }
 
     let new_schema = Arc::new(arrow::datatypes::Schema::new(new_fields));
-    RecordBatch::try_new(new_schema, new_columns).map_err(|e| PolarsSerdeError::ConversionError {
+    let result = RecordBatch::try_new(new_schema, new_columns).map_err(|e| PolarsSerdeError::ConversionError {
         message: format!("Failed to create converted record batch: {}", e),
-    })
+    })?;
+    
+    eprintln!("DEBUG: convert_from_chrono_columns - Output batch has {} rows, {} columns", 
+             result.num_rows(), result.num_columns());
+    
+    Ok(result)
 }
 
 /// Helper function to convert dictionary arrays to string arrays to avoid categorical issues
@@ -655,10 +665,16 @@ fn deserialize_with_chrono_detection<T>(batch: &RecordBatch) -> Result<Vec<T>>
 where
     T: DeserializeOwned,
 {
+    eprintln!("DEBUG: deserialize_with_chrono_detection - Input batch has {} rows, {} columns", 
+             batch.num_rows(), batch.num_columns());
+    
     // Use standard serde_arrow deserialization
-    from_record_batch(batch).map_err(|e| PolarsSerdeError::ConversionError {
+    let result: Vec<T> = from_record_batch(batch).map_err(|e| PolarsSerdeError::ConversionError {
         message: format!("Failed to deserialize batch: {}", e),
-    })
+    })?;
+    
+    eprintln!("DEBUG: deserialize_with_chrono_detection - Deserialized {} records", result.len());
+    Ok(result)
 }
 
 /// Convert a Polars DataFrame to Vec<T> where T implements Deserialize.
@@ -688,16 +704,31 @@ pub fn from_dataframe<T>(df: DataFrame) -> Result<Vec<T>>
 where
     T: DeserializeOwned,
 {
+    eprintln!("DEBUG: from_dataframe - Input DataFrame has {} rows, {} columns", 
+             df.height(), df.width());
+    
     let batches: Vec<RecordBatch> = version_compat::dataframe_to_arrow(df)?;
     let total_rows: usize = batches.iter().map(|b| b.num_rows()).sum();
     let mut out = Vec::with_capacity(total_rows);
 
-    for batch in &batches {
+    eprintln!("DEBUG: from_dataframe - Converted to {} RecordBatches with total {} rows", 
+             batches.len(), total_rows);
+
+    for (batch_idx, batch) in batches.iter().enumerate() {
+        eprintln!("DEBUG: from_dataframe - Processing batch {} with {} rows", 
+                 batch_idx, batch.num_rows());
+        
         // Apply reverse chrono conversion for DataFrame to struct conversion
         let converted_batch = convert_from_chrono_columns(batch.clone())?;
         let mut part: Vec<T> = deserialize_with_chrono_detection(&converted_batch)?;
+        
+        eprintln!("DEBUG: from_dataframe - Deserialized {} records from batch {}", 
+                 part.len(), batch_idx);
+        
         out.append(&mut part);
     }
+    
+    eprintln!("DEBUG: from_dataframe - Final result has {} records", out.len());
     Ok(out)
 }
 
@@ -903,21 +934,20 @@ mod tests {
     }
     
     #[test]
-    fn test_debug_date_column_types() {
-        // Test what column types we get with the current implementation
-        let records = vec![
-            DateRecord {
-                name: "Alice".to_string(),
-                birth_date: NaiveDate::from_ymd_opt(1990, 5, 15).unwrap(),
-            },
-        ];
-
-        let df = to_dataframe(&records).unwrap();
+    fn test_empty_dataframe_handling() {
+        use polars::prelude::*;
         
+        // Test empty DataFrame conversion - this should not panic or error
+        let empty_df = df! {
+            "name" => Vec::<String>::new(),
+            "age" => Vec::<i32>::new(),
+            "score" => Vec::<f64>::new(),
+            "active" => Vec::<bool>::new(),
+        }.unwrap();
         
-        // Check that roundtrip works
-        let converted_back: Vec<DateRecord> = from_dataframe(df).unwrap();
-        assert_eq!(records, converted_back);
+        let result: Vec<TestRecord> = from_dataframe(empty_df).unwrap();
+        assert_eq!(result.len(), 0);
     }
+    
    
 }

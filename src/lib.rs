@@ -321,7 +321,7 @@ impl serde::ser::SerializeStructVariant for &mut TypeDetector {
 
 
 /// Detect chrono types by analyzing type information at compile time
-fn detect_chrono_types<T: Serialize>(sample: &T) -> std::result::Result<HashMap<String, String>, serde_arrow::Error> {
+pub fn detect_chrono_types<T: Serialize>(sample: &T) -> std::result::Result<HashMap<String, String>, serde_arrow::Error> {
     let mut detector = TypeDetector::new();
     sample.serialize(&mut detector).map_err(|_| serde_arrow::Error::custom("Type detection failed".to_string()))?;
     Ok(detector.field_types)
@@ -605,48 +605,14 @@ fn convert_from_chrono_columns(
         // eprintln!("DEBUG: Processing column '{}' with type {:?}, {} rows", 
         //          field_name, field.data_type(), column.len());
         
-        // Convert Date32 and Timestamp columns back to strings for serde_arrow compatibility
-        match field.data_type() {
-            DataType::Date32 => {
-                // Convert Date32 back to string representation for chrono deserialization
-                let string_array = convert_date32_to_string(column)?;
-                new_columns.push(string_array);
-                new_fields.push(Arc::new(Field::new(
-                    field_name,
-                    DataType::Utf8,
-                    field.is_nullable(),
-                )));
-            },
-            DataType::Timestamp(_, timezone) => {
-                // Convert Timestamp back to string representation for chrono deserialization
-                let string_array = convert_timestamp_to_string(column, timezone.clone())?;
-                new_columns.push(string_array);
-                new_fields.push(Arc::new(Field::new(
-                    field_name,
-                    DataType::Utf8,
-                    field.is_nullable(),
-                )));
-            },
-            DataType::Date64 => {
-                // Handle Date64 as well (just in case)
-                let string_array = compute::cast(column, &DataType::Utf8).map_err(|e| {
-                    PolarsSerdeError::ConversionError {
-                        message: format!("Failed to cast Date64 to String for field '{}': {}", field_name, e),
-                    }
-                })?;
-                new_columns.push(string_array);
-                new_fields.push(Arc::new(Field::new(
-                    field_name,
-                    DataType::Utf8,
-                    field.is_nullable(),
-                )));
-            },
-            _ => {
-                // Keep all other types as-is
-                new_columns.push(column.clone());
-                new_fields.push(Arc::new(field.clone()));
-            }
-        }
+        // DO NOT automatically convert Date/Timestamp columns to strings!
+        // Let serde_arrow handle the conversion based on what the target struct expects.
+        // If the struct expects a chrono type, serde_arrow will handle Date→chrono conversion.
+        // If the struct expects an integer, serde_arrow will handle Date→integer conversion.
+        
+        // Keep all types as-is and let serde_arrow handle the conversion
+        new_columns.push(column.clone());
+        new_fields.push(Arc::new(field.clone()));
     }
 
     let new_schema = Arc::new(arrow::datatypes::Schema::new(new_fields));

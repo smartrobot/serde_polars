@@ -136,7 +136,7 @@ fn test_naive_date_roundtrip() {
     assert_eq!(df.height(), 3);
     assert_eq!(df.width(), 3);
     
-    // SUCCESS: Raw NaiveDate types are now automatically detected and converted to Date!
+    // SUCCESS: Raw NaiveDate types are now automatically detected and converted to Date32!
     let birth_date_column = df.column("birth_date").unwrap();
     assert_eq!(birth_date_column.dtype(), &DataType::Date);
     
@@ -244,9 +244,9 @@ fn test_mixed_temporal_types() {
     assert_eq!(df.height(), 2);
     assert_eq!(df.width(), 7);
     
-    // Verify that birth_date is converted to proper Date type
+    // Verify that birth_date is converted to proper Date32 type
     let birth_date_column = df.column("birth_date").unwrap();
-    assert_eq!(birth_date_column.dtype(), &DataType::String);
+    assert_eq!(birth_date_column.dtype(), &DataType::Date);
     
     // Note: Other datetime fields remain as String for now
     
@@ -288,9 +288,9 @@ fn test_optional_dates() {
     assert_eq!(df.height(), 3);
     assert_eq!(df.width(), 4);
     
-    // Verify that birth_date is converted to proper Date type (even when optional)
+    // Verify that birth_date is converted to proper Date32 type (even when optional)
     let birth_date_column = df.column("birth_date").unwrap();
-    assert_eq!(birth_date_column.dtype(), &DataType::String);
+    assert_eq!(birth_date_column.dtype(), &DataType::Date);
     
     // Convert back to structs
     let converted_back: Vec<OptionalDateRecord> = from_dataframe(df).unwrap();
@@ -325,9 +325,9 @@ fn test_single_date_record() {
     assert_eq!(df.height(), 1);
     assert_eq!(df.width(), 3);
     
-    // Verify that birth_date is converted to proper Date type
+    // Verify that birth_date is converted to proper Date32 type
     let birth_date_column = df.column("birth_date").unwrap();
-    assert_eq!(birth_date_column.dtype(), &DataType::String);
+    assert_eq!(birth_date_column.dtype(), &DataType::Date);
     
     // Convert back to structs
     let converted_back: Vec<PersonWithDate> = from_dataframe(df).unwrap();

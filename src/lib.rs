@@ -12,24 +12,19 @@
 //! - Multi-version compatibility for Polars 0.40+ via feature flags
 //! - Thread-safe operations with comprehensive error handling
 //! - High performance with minimal allocations
-//! - **Efficient date/time handling with numeric wrapper types**
+//! - **Efficient date/time handling with automatic chrono type detection**
 //! - Support for both single structs and collections
 //!
 //! ## Automatic Date/Time Handling
 //!
 //! This library **automatically detects and converts chrono types** to proper Polars columns:
 //!
-//! ### Raw Chrono Types (Automatic Detection)
-//! - `NaiveDate` → `Date` column (automatically detected and converted)
-//! - `NaiveDateTime` → `Datetime` column (automatically detected and converted) 
-//! - `DateTime<Utc>` → `Datetime` column (automatically detected and converted)
+//! ### Chrono Types (Automatic Detection)
+//! - `NaiveDate` → `Date` column (stored as i32 days since Unix epoch)
+//! - `NaiveDateTime` → `Timestamp` column (stored as i64 nanoseconds since Unix epoch) 
+//! - `DateTime<Utc>` → `Timestamp` column (stored as i64 nanoseconds since Unix epoch)
 //!
-//! ### High-Performance Wrapper Types (Manual, Most Efficient)
-//! - [`DateWrapper`] - Converts `NaiveDate` to/from i32 (days since Unix epoch) → Date32 column
-//! - [`DateTimeWrapper`] - Converts `NaiveDateTime` to/from i64 (nanoseconds since Unix epoch) → Timestamp column  
-//! - [`UtcDateTimeWrapper`] - Converts `DateTime<Utc>` to/from i64 (nanoseconds since Unix epoch) → Timestamp column
-//!
-//! **Use raw chrono types for convenience, wrapper types for maximum performance!**
+//! **All chrono types work seamlessly with efficient numeric storage!**
 //!
 //! ## Version Compatibility
 //!
@@ -50,35 +45,35 @@
 //! ```ignore
 //! use polars::prelude::*;
 //! use serde::{Serialize, Deserialize};
-//! use serde_polars::{from_dataframe, to_dataframe, DateWrapper};
+//! use serde_polars::{from_dataframe, to_dataframe};
 //! use chrono::NaiveDate;
 //!
 //! #[derive(Debug, Serialize, Deserialize)]
 //! struct Record {
 //!     name: String,
 //!     age: i32,
-//!     birth_date: DateWrapper,  // Efficient i32 storage!
+//!     birth_date: NaiveDate,  // Just use raw chrono types!
 //!     score: f64,
 //! }
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! // Create records with efficient date handling
+//! // Create records with automatic date handling
 //! let records = vec![
 //!     Record {
 //!         name: "Alice".to_string(),
 //!         age: 25,
-//!         birth_date: DateWrapper::new(NaiveDate::from_ymd_opt(1998, 5, 15).unwrap()),
+//!         birth_date: NaiveDate::from_ymd_opt(1998, 5, 15).unwrap(),
 //!         score: 85.5,
 //!     },
 //!     Record {
 //!         name: "Bob".to_string(), 
 //!         age: 30,
-//!         birth_date: DateWrapper::new(NaiveDate::from_ymd_opt(1993, 8, 22).unwrap()),
+//!         birth_date: NaiveDate::from_ymd_opt(1993, 8, 22).unwrap(),
 //!         score: 92.0,
 //!     },
 //! ];
 //!
-//! // Convert to DataFrame (birth_date will be stored as i32 - no strings!)
+//! // Convert to DataFrame (birth_date will be automatically converted to Date type!)
 //! let df = to_dataframe(&records)?;
 //!
 //! // Convert DataFrame back to structs
@@ -125,7 +120,7 @@ use polars::prelude::*;
 use arrow::compute;
 use arrow::datatypes::{DataType, Field, FieldRef, TimeUnit};
 use arrow::record_batch::RecordBatch;
-use chrono::{NaiveDate, NaiveDateTime, DateTime, Utc, Duration};
+use chrono::{NaiveDate, NaiveDateTime, DateTime, Duration};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_arrow::schema::{SchemaLike, TracingOptions};
@@ -139,129 +134,10 @@ pub use error::PolarsSerdeError;
 /// Result type used throughout this crate
 pub type Result<T> = std::result::Result<T, PolarsSerdeError>;
 
-/// High-performance numeric conversion wrappers for chrono types
-/// 
-/// These provide maximum efficiency, but raw chrono types also work automatically!
-/// Raw chrono types are auto-detected and converted to proper Date/Datetime columns.
-
-/// Wrapper for NaiveDate that converts to/from days since Unix epoch (i32)
-/// This provides maximum efficiency for date storage in Polars DataFrames
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DateWrapper(pub NaiveDate);
-
-impl DateWrapper {
-    /// Create a new DateWrapper from a NaiveDate
-    pub fn new(date: NaiveDate) -> Self {
-        Self(date)
-    }
-    
-    /// Get the underlying NaiveDate
-    pub fn into_inner(self) -> NaiveDate {
-        self.0
-    }
-}
-
-impl serde::Serialize for DateWrapper {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        // Convert directly to days since Unix epoch (what Polars uses internally)
-        let days = self.0.signed_duration_since(NaiveDate::from_ymd_opt(1970, 1, 1).unwrap()).num_days() as i32;
-        serializer.serialize_newtype_struct("DateWrapper", &days)
-    }
-}
-
-impl<'de> serde::Deserialize<'de> for DateWrapper {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let days = i32::deserialize(deserializer)?;
-        let date = NaiveDate::from_ymd_opt(1970, 1, 1).unwrap() + Duration::days(days as i64);
-        Ok(DateWrapper(date))
-    }
-}
-
-/// Wrapper for NaiveDateTime that converts to/from nanoseconds since Unix epoch (i64)
-/// This provides maximum efficiency for datetime storage in Polars DataFrames
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DateTimeWrapper(pub NaiveDateTime);
-
-impl DateTimeWrapper {
-    /// Create a new DateTimeWrapper from a NaiveDateTime
-    pub fn new(datetime: NaiveDateTime) -> Self {
-        Self(datetime)
-    }
-    
-    /// Get the underlying NaiveDateTime
-    pub fn into_inner(self) -> NaiveDateTime {
-        self.0
-    }
-}
-
-impl serde::Serialize for DateTimeWrapper {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        // Convert directly to nanoseconds since Unix epoch
-        let nanos = self.0.and_utc().timestamp_nanos_opt().unwrap_or(0);
-        serializer.serialize_newtype_struct("DateTimeWrapper", &nanos)
-    }
-}
-
-impl<'de> serde::Deserialize<'de> for DateTimeWrapper {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let nanos = i64::deserialize(deserializer)?;
-        let dt = DateTime::from_timestamp_nanos(nanos).naive_utc();
-        Ok(DateTimeWrapper(dt))
-    }
-}
-
-/// Wrapper for DateTime<Utc> that converts to/from nanoseconds since Unix epoch (i64)
-/// This provides maximum efficiency for UTC datetime storage in Polars DataFrames
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct UtcDateTimeWrapper(pub DateTime<Utc>);
-
-impl UtcDateTimeWrapper {
-    /// Create a new UtcDateTimeWrapper from a DateTime<Utc>
-    pub fn new(datetime: DateTime<Utc>) -> Self {
-        Self(datetime)
-    }
-    
-    /// Get the underlying DateTime<Utc>
-    pub fn into_inner(self) -> DateTime<Utc> {
-        self.0
-    }
-}
-
-impl serde::Serialize for UtcDateTimeWrapper {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        // Convert directly to nanoseconds since Unix epoch
-        let nanos = self.0.timestamp_nanos_opt().unwrap_or(0);
-        serializer.serialize_newtype_struct("UtcDateTimeWrapper", &nanos)
-    }
-}
-
-impl<'de> serde::Deserialize<'de> for UtcDateTimeWrapper {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let nanos = i64::deserialize(deserializer)?;
-        let dt = DateTime::from_timestamp_nanos(nanos);
-        Ok(UtcDateTimeWrapper(dt))
-    }
-}
 
 use std::collections::HashMap;
+
+
 
 /// Type detector that identifies chrono types at compile time
 struct TypeDetector {
@@ -429,12 +305,125 @@ fn detect_chrono_types<T: Serialize>(sample: &T) -> std::result::Result<HashMap<
 }
 
 
+/// Convert string arrays containing dates to Date32 arrays (i32 days since Unix epoch)
+fn convert_string_dates_to_date32(column: &arrow::array::ArrayRef) -> Result<arrow::array::ArrayRef> {
+    use arrow::array::{StringArray, LargeStringArray, Date32Builder};
+    use arrow::array::Array;
+    
+    let mut builder = Date32Builder::new();
+    
+    // Handle both Utf8 and LargeUtf8 string arrays
+    if let Some(string_array) = column.as_any().downcast_ref::<StringArray>() {
+        for i in 0..string_array.len() {
+            if string_array.is_null(i) {
+                builder.append_null();
+            } else {
+                let date_str = string_array.value(i);
+                // Parse chrono's default date format
+                if let Ok(date) = NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
+                    let days = date.signed_duration_since(NaiveDate::from_ymd_opt(1970, 1, 1).unwrap()).num_days() as i32;
+                    builder.append_value(days);
+                } else {
+                    return Err(PolarsSerdeError::ConversionError {
+                        message: format!("Failed to parse date string: {}", date_str),
+                    });
+                }
+            }
+        }
+    } else if let Some(large_string_array) = column.as_any().downcast_ref::<LargeStringArray>() {
+        for i in 0..large_string_array.len() {
+            if large_string_array.is_null(i) {
+                builder.append_null();
+            } else {
+                let date_str = large_string_array.value(i);
+                // Parse chrono's default date format
+                if let Ok(date) = NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
+                    let days = date.signed_duration_since(NaiveDate::from_ymd_opt(1970, 1, 1).unwrap()).num_days() as i32;
+                    builder.append_value(days);
+                } else {
+                    return Err(PolarsSerdeError::ConversionError {
+                        message: format!("Failed to parse date string: {}", date_str),
+                    });
+                }
+            }
+        }
+    } else {
+        return Err(PolarsSerdeError::ConversionError {
+            message: "Expected string array (Utf8 or LargeUtf8) for date conversion".to_string(),
+        });
+    }
+    
+    Ok(Arc::new(builder.finish()))
+}
+
+/// Convert string arrays containing datetimes to Timestamp arrays (i64 nanoseconds since Unix epoch)
+fn convert_string_datetimes_to_timestamp(
+    column: &arrow::array::ArrayRef, 
+    timezone: Option<Arc<str>>
+) -> Result<arrow::array::ArrayRef> {
+    use arrow::array::{StringArray, LargeStringArray, TimestampNanosecondBuilder};
+    use arrow::array::Array;
+    
+    let mut builder = TimestampNanosecondBuilder::new();
+    
+    // Handle both Utf8 and LargeUtf8 string arrays
+    if let Some(string_array) = column.as_any().downcast_ref::<StringArray>() {
+        for i in 0..string_array.len() {
+            if string_array.is_null(i) {
+                builder.append_null();
+            } else {
+                let datetime_str = string_array.value(i);
+                let nanos = parse_datetime_string(datetime_str, timezone.is_some())?;
+                builder.append_value(nanos);
+            }
+        }
+    } else if let Some(large_string_array) = column.as_any().downcast_ref::<LargeStringArray>() {
+        for i in 0..large_string_array.len() {
+            if large_string_array.is_null(i) {
+                builder.append_null();
+            } else {
+                let datetime_str = large_string_array.value(i);
+                let nanos = parse_datetime_string(datetime_str, timezone.is_some())?;
+                builder.append_value(nanos);
+            }
+        }
+    } else {
+        return Err(PolarsSerdeError::ConversionError {
+            message: "Expected string array (Utf8 or LargeUtf8) for datetime conversion".to_string(),
+        });
+    }
+    
+    Ok(Arc::new(builder.finish().with_timezone_opt(timezone)))
+}
+
+/// Helper function to parse datetime strings
+fn parse_datetime_string(datetime_str: &str, is_utc: bool) -> Result<i64> {
+    if is_utc {
+        // Parse DateTime<Utc> format (RFC3339)
+        if let Ok(dt) = DateTime::parse_from_rfc3339(datetime_str) {
+            Ok(dt.timestamp_nanos_opt().unwrap_or(0))
+        } else {
+            Err(PolarsSerdeError::ConversionError {
+                message: format!("Failed to parse UTC datetime string: {}", datetime_str),
+            })
+        }
+    } else {
+        // Parse NaiveDateTime format  
+        if let Ok(dt) = NaiveDateTime::parse_from_str(datetime_str, "%Y-%m-%dT%H:%M:%S%.f") {
+            Ok(dt.and_utc().timestamp_nanos_opt().unwrap_or(0))
+        } else {
+            Err(PolarsSerdeError::ConversionError {
+                message: format!("Failed to parse datetime string: {}", datetime_str),
+            })
+        }
+    }
+}
+
 /// Convert chrono types to proper Arrow date/datetime types
 fn convert_chrono_columns(
     batch: RecordBatch,
     chrono_types: &HashMap<String, String>
 ) -> Result<RecordBatch> {
-    use arrow::compute;
     
     let mut new_columns = Vec::new();
     let mut new_fields = Vec::new();
@@ -446,40 +435,9 @@ fn convert_chrono_columns(
         
         if let Some(chrono_type) = chrono_types.get(field_name) {
             match chrono_type.as_str() {
-                // Wrapper types that are already numeric - cast to proper types
-                "DateWrapper" => {
-                    let date_array = compute::cast(column, &DataType::Date32).map_err(|e| {
-                        PolarsSerdeError::ConversionError {
-                            message: format!("Failed to cast DateWrapper to Date32: {}", e),
-                        }
-                    })?;
-                    new_columns.push(date_array);
-                    new_fields.push(Arc::new(Field::new(
-                        field_name,
-                        DataType::Date32,
-                        field.is_nullable(),
-                    )));
-                },
-                "DateTimeWrapper" | "UtcDateTimeWrapper" => {
-                    let ts_array = compute::cast(column, &DataType::Timestamp(TimeUnit::Nanosecond, None)).map_err(|e| {
-                        PolarsSerdeError::ConversionError {
-                            message: format!("Failed to cast DateTimeWrapper to Timestamp: {}", e),
-                        }
-                    })?;
-                    new_columns.push(ts_array);
-                    new_fields.push(Arc::new(Field::new(
-                        field_name,
-                        DataType::Timestamp(TimeUnit::Nanosecond, None),
-                        field.is_nullable(),
-                    )));
-                },
-                // Raw chrono types that were converted to numeric by our custom serializer
                 "NaiveDate" => {
-                    let date_array = compute::cast(column, &DataType::Date32).map_err(|e| {
-                        PolarsSerdeError::ConversionError {
-                            message: format!("Failed to cast NaiveDate to Date32: {}", e),
-                        }
-                    })?;
+                    // Convert string dates to Date32 (i32 days since Unix epoch)
+                    let date_array = convert_string_dates_to_date32(column)?;
                     new_columns.push(date_array);
                     new_fields.push(Arc::new(Field::new(
                         field_name,
@@ -487,16 +445,23 @@ fn convert_chrono_columns(
                         field.is_nullable(),
                     )));
                 },
-                "NaiveDateTime" | "DateTimeUtc" => {
-                    let ts_array = compute::cast(column, &DataType::Timestamp(TimeUnit::Nanosecond, None)).map_err(|e| {
-                        PolarsSerdeError::ConversionError {
-                            message: format!("Failed to cast {} to Timestamp: {}", chrono_type, e),
-                        }
-                    })?;
+                "NaiveDateTime" => {
+                    // Convert string datetimes to Timestamp (i64 nanoseconds)
+                    let ts_array = convert_string_datetimes_to_timestamp(column, None)?;
                     new_columns.push(ts_array);
                     new_fields.push(Arc::new(Field::new(
                         field_name,
                         DataType::Timestamp(TimeUnit::Nanosecond, None),
+                        field.is_nullable(),
+                    )));
+                },
+                "DateTimeUtc" => {
+                    // Convert string UTC datetimes to Timestamp with UTC timezone
+                    let ts_array = convert_string_datetimes_to_timestamp(column, Some("UTC".into()))?;
+                    new_columns.push(ts_array);
+                    new_fields.push(Arc::new(Field::new(
+                        field_name,
+                        DataType::Timestamp(TimeUnit::Nanosecond, Some("UTC".into())),
                         field.is_nullable(),
                     )));
                 },
@@ -519,11 +484,71 @@ fn convert_chrono_columns(
     })
 }
 
-/// Convert Date32/Timestamp columns back to strings for serde_arrow compatibility
+/// Convert Date32 arrays back to string arrays for chrono deserialization  
+fn convert_date32_to_string(column: &arrow::array::ArrayRef) -> Result<arrow::array::ArrayRef> {
+    use arrow::array::{Date32Array, StringBuilder};
+    use arrow::array::Array;
+    
+    let date_array = column.as_any().downcast_ref::<Date32Array>()
+        .ok_or_else(|| PolarsSerdeError::ConversionError {
+            message: "Expected Date32 array for string conversion".to_string(),
+        })?;
+    
+    let mut builder = StringBuilder::new();
+    
+    for i in 0..date_array.len() {
+        if date_array.is_null(i) {
+            builder.append_null();
+        } else {
+            let days = date_array.value(i);
+            let date = NaiveDate::from_ymd_opt(1970, 1, 1).unwrap() + Duration::days(days as i64);
+            builder.append_value(date.format("%Y-%m-%d").to_string());
+        }
+    }
+    
+    Ok(Arc::new(builder.finish()))
+}
+
+/// Convert Timestamp arrays back to string arrays for chrono deserialization
+fn convert_timestamp_to_string(
+    column: &arrow::array::ArrayRef,
+    timezone: Option<Arc<str>>
+) -> Result<arrow::array::ArrayRef> {
+    use arrow::array::{TimestampNanosecondArray, StringBuilder};
+    use arrow::array::Array;
+    
+    let ts_array = column.as_any().downcast_ref::<TimestampNanosecondArray>()
+        .ok_or_else(|| PolarsSerdeError::ConversionError {
+            message: "Expected Timestamp array for string conversion".to_string(),
+        })?;
+    
+    let mut builder = StringBuilder::new();
+    
+    for i in 0..ts_array.len() {
+        if ts_array.is_null(i) {
+            builder.append_null();
+        } else {
+            let nanos = ts_array.value(i);
+            
+            if timezone.is_some() {
+                // Convert to UTC DateTime string (RFC3339 format)
+                let dt = DateTime::from_timestamp_nanos(nanos);
+                builder.append_value(dt.to_rfc3339());
+            } else {
+                // Convert to NaiveDateTime string
+                let dt = DateTime::from_timestamp_nanos(nanos).naive_utc();
+                builder.append_value(dt.format("%Y-%m-%dT%H:%M:%S%.f").to_string());
+            }
+        }
+    }
+    
+    Ok(Arc::new(builder.finish()))
+}
+
+/// Convert Date32/Timestamp columns back to string for serde_arrow compatibility
 fn convert_from_chrono_columns(
     batch: RecordBatch,
 ) -> Result<RecordBatch> {
-    use arrow::compute;
     
     let mut new_columns = Vec::new();
     let mut new_fields = Vec::new();
@@ -533,15 +558,12 @@ fn convert_from_chrono_columns(
         let field = schema.field(i);
         let field_name = field.name();
         
+        
         // Convert Date32 and Timestamp columns back to strings for serde_arrow compatibility
         match field.data_type() {
             DataType::Date32 => {
-                // Convert Date32 back to string representation
-                let string_array = compute::cast(column, &DataType::Utf8).map_err(|e| {
-                    PolarsSerdeError::ConversionError {
-                        message: format!("Failed to cast Date32 to String for field '{}': {}", field_name, e),
-                    }
-                })?;
+                // Convert Date32 back to string representation for chrono deserialization
+                let string_array = convert_date32_to_string(column)?;
                 new_columns.push(string_array);
                 new_fields.push(Arc::new(Field::new(
                     field_name,
@@ -549,11 +571,21 @@ fn convert_from_chrono_columns(
                     field.is_nullable(),
                 )));
             },
-            DataType::Timestamp(_, _) => {
-                // Convert Timestamp back to string representation
+            DataType::Timestamp(_, timezone) => {
+                // Convert Timestamp back to string representation for chrono deserialization
+                let string_array = convert_timestamp_to_string(column, timezone.clone())?;
+                new_columns.push(string_array);
+                new_fields.push(Arc::new(Field::new(
+                    field_name,
+                    DataType::Utf8,
+                    field.is_nullable(),
+                )));
+            },
+            DataType::Date64 => {
+                // Handle Date64 as well (just in case)
                 let string_array = compute::cast(column, &DataType::Utf8).map_err(|e| {
                     PolarsSerdeError::ConversionError {
-                        message: format!("Failed to cast Timestamp to String for field '{}': {}", field_name, e),
+                        message: format!("Failed to cast Date64 to String for field '{}': {}", field_name, e),
                     }
                 })?;
                 new_columns.push(string_array);
@@ -617,6 +649,18 @@ fn convert_dictionary_to_strings(batch: RecordBatch) -> Result<RecordBatch> {
     })
 }
 
+
+/// Helper function to deserialize with chrono type detection
+fn deserialize_with_chrono_detection<T>(batch: &RecordBatch) -> Result<Vec<T>>
+where
+    T: DeserializeOwned,
+{
+    // Use standard serde_arrow deserialization
+    from_record_batch(batch).map_err(|e| PolarsSerdeError::ConversionError {
+        message: format!("Failed to deserialize batch: {}", e),
+    })
+}
+
 /// Convert a Polars DataFrame to Vec<T> where T implements Deserialize.
 ///
 /// # Examples
@@ -649,9 +693,9 @@ where
     let mut out = Vec::with_capacity(total_rows);
 
     for batch in &batches {
-        // Convert Date32/Timestamp columns back to strings for serde_arrow compatibility
+        // Apply reverse chrono conversion for DataFrame to struct conversion
         let converted_batch = convert_from_chrono_columns(batch.clone())?;
-        let mut part: Vec<T> = from_record_batch(&converted_batch)?;
+        let mut part: Vec<T> = deserialize_with_chrono_detection(&converted_batch)?;
         out.append(&mut part);
     }
     Ok(out)
@@ -709,16 +753,19 @@ where
         message: format!("Failed to detect chrono types: {}", e),
     })?;
     
-    // Create the record batch - this will serialize with our intercepted data
+    // Create the record batch with chrono conversion
     let rb: RecordBatch = if chrono_types.is_empty() {
         // No chrono types, use normal serialization
         to_record_batch(&basic_fields, rows)?
     } else {
-        // We have chrono types, we need to create a modified data structure
-        // For now, use the basic serialization and convert after
+        // We have chrono types, serialize with numeric conversion
+        // Note: This is a workaround - we serialize normally then convert the columns
+        // The proper solution would be to use a custom serializer for each row,
+        // but that's more complex and this works for our use case
         to_record_batch(&basic_fields, rows)?
     };
     
+    // Apply chrono column conversion for detected chrono fields
     let converted_rb = convert_chrono_columns(rb, &chrono_types)?;
 
     // Convert any dictionary arrays to string arrays to avoid categorical requirements
@@ -828,6 +875,49 @@ mod tests {
         assert_eq!(converted[0].birth_date, dates[0]);
         assert_eq!(converted[1].name, "Bob");
         assert_eq!(converted[1].birth_date, dates[1]);
+    }
+
+    #[derive(Debug, Serialize, Deserialize, PartialEq)]
+    struct UtcRecord {
+        name: String,
+        created_at: DateTime<Utc>,
+    }
+
+    #[test] 
+    fn test_debug_datetime_conversion() {
+        // Test what happens when we try to convert DateTime<Utc>
+        let records = vec![
+            UtcRecord {
+                name: "Test".to_string(),
+                created_at: DateTime::parse_from_rfc3339("2023-06-15T14:30:00Z").unwrap().with_timezone(&Utc),
+            },
+        ];
+
+        // Convert to DataFrame first
+        let df = to_dataframe(&records).unwrap();
+        
+        
+        // This might fail - let's see what error we get
+        let converted_back: Vec<UtcRecord> = from_dataframe(df).unwrap();
+        assert_eq!(records, converted_back);
+    }
+    
+    #[test]
+    fn test_debug_date_column_types() {
+        // Test what column types we get with the current implementation
+        let records = vec![
+            DateRecord {
+                name: "Alice".to_string(),
+                birth_date: NaiveDate::from_ymd_opt(1990, 5, 15).unwrap(),
+            },
+        ];
+
+        let df = to_dataframe(&records).unwrap();
+        
+        
+        // Check that roundtrip works
+        let converted_back: Vec<DateRecord> = from_dataframe(df).unwrap();
+        assert_eq!(records, converted_back);
     }
    
 }

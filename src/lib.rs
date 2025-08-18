@@ -519,6 +519,64 @@ fn convert_chrono_columns(
     })
 }
 
+/// Convert Date32/Timestamp columns back to strings for serde_arrow compatibility
+fn convert_from_chrono_columns(
+    batch: RecordBatch,
+) -> Result<RecordBatch> {
+    use arrow::compute;
+    
+    let mut new_columns = Vec::new();
+    let mut new_fields = Vec::new();
+    let schema = batch.schema();
+
+    for (i, column) in batch.columns().iter().enumerate() {
+        let field = schema.field(i);
+        let field_name = field.name();
+        
+        // Convert Date32 and Timestamp columns back to strings for serde_arrow compatibility
+        match field.data_type() {
+            DataType::Date32 => {
+                // Convert Date32 back to string representation
+                let string_array = compute::cast(column, &DataType::Utf8).map_err(|e| {
+                    PolarsSerdeError::ConversionError {
+                        message: format!("Failed to cast Date32 to String for field '{}': {}", field_name, e),
+                    }
+                })?;
+                new_columns.push(string_array);
+                new_fields.push(Arc::new(Field::new(
+                    field_name,
+                    DataType::Utf8,
+                    field.is_nullable(),
+                )));
+            },
+            DataType::Timestamp(_, _) => {
+                // Convert Timestamp back to string representation
+                let string_array = compute::cast(column, &DataType::Utf8).map_err(|e| {
+                    PolarsSerdeError::ConversionError {
+                        message: format!("Failed to cast Timestamp to String for field '{}': {}", field_name, e),
+                    }
+                })?;
+                new_columns.push(string_array);
+                new_fields.push(Arc::new(Field::new(
+                    field_name,
+                    DataType::Utf8,
+                    field.is_nullable(),
+                )));
+            },
+            _ => {
+                // Keep all other types as-is
+                new_columns.push(column.clone());
+                new_fields.push(Arc::new(field.clone()));
+            }
+        }
+    }
+
+    let new_schema = Arc::new(arrow::datatypes::Schema::new(new_fields));
+    RecordBatch::try_new(new_schema, new_columns).map_err(|e| PolarsSerdeError::ConversionError {
+        message: format!("Failed to create converted record batch: {}", e),
+    })
+}
+
 /// Helper function to convert dictionary arrays to string arrays to avoid categorical issues
 
 fn convert_dictionary_to_strings(batch: RecordBatch) -> Result<RecordBatch> {
@@ -591,7 +649,9 @@ where
     let mut out = Vec::with_capacity(total_rows);
 
     for batch in &batches {
-        let mut part: Vec<T> = from_record_batch(batch)?;
+        // Convert Date32/Timestamp columns back to strings for serde_arrow compatibility
+        let converted_batch = convert_from_chrono_columns(batch.clone())?;
+        let mut part: Vec<T> = from_record_batch(&converted_batch)?;
         out.append(&mut part);
     }
     Ok(out)
@@ -713,5 +773,61 @@ mod tests {
         assert!(matches!(result.unwrap_err(), PolarsSerdeError::EmptyInput));
     }
 
+    #[derive(Debug, Serialize, Deserialize, PartialEq)]
+    struct DateRecord {
+        name: String,
+        birth_date: NaiveDate,
+    }
+
+    #[test]
+    fn test_naive_date_conversion_from_polars_date() {
+        use chrono::NaiveDate;
+        
+        // Test data with NaiveDate
+        let records = vec![
+            DateRecord {
+                name: "Alice".to_string(),
+                birth_date: NaiveDate::from_ymd_opt(1990, 5, 15).unwrap(),
+            },
+            DateRecord {
+                name: "Bob".to_string(),
+                birth_date: NaiveDate::from_ymd_opt(1985, 12, 3).unwrap(),
+            },
+        ];
+
+        // Convert to DataFrame - this should create Date32 columns
+        let df = to_dataframe(&records).unwrap();
+        
+        // Convert back to structs - this should work now with our fix!
+        let converted_back: Vec<DateRecord> = from_dataframe(df).unwrap();
+        
+        // Verify round-trip conversion
+        assert_eq!(records, converted_back);
+    }
+
+    #[test]
+    fn test_date32_column_conversion() {
+        use polars::prelude::*;
+        
+        // Create a DataFrame with a Date column directly (simulates the user's scenario)
+        let dates = vec![
+            NaiveDate::from_ymd_opt(1990, 5, 15).unwrap(),
+            NaiveDate::from_ymd_opt(1985, 12, 3).unwrap(),
+        ];
+        
+        let df = df![
+            "name" => ["Alice", "Bob"],
+            "birth_date" => dates.clone(),
+        ].unwrap();
+        
+        // This should work now - converting a DataFrame with Date column to structs with NaiveDate
+        let converted: Vec<DateRecord> = from_dataframe(df).unwrap();
+        
+        assert_eq!(converted.len(), 2);
+        assert_eq!(converted[0].name, "Alice");
+        assert_eq!(converted[0].birth_date, dates[0]);
+        assert_eq!(converted[1].name, "Bob");
+        assert_eq!(converted[1].birth_date, dates[1]);
+    }
    
 }

@@ -34,6 +34,40 @@ use polars_crate_0_49 as polars;
 
 use polars::prelude::*;
 
+// Import DataType for tests
+#[cfg(feature = "polars_0_40")]
+use polars_crate_0_40::datatypes::DataType;
+
+#[cfg(feature = "polars_0_41")]
+use polars_crate_0_41::datatypes::DataType;
+
+#[cfg(feature = "polars_0_42")]
+use polars_crate_0_42::datatypes::DataType;
+
+#[cfg(feature = "polars_0_43")]
+use polars_crate_0_43::datatypes::DataType;
+
+#[cfg(feature = "polars_0_44")]
+use polars_crate_0_44::datatypes::DataType;
+
+#[cfg(feature = "polars_0_45")]
+use polars_crate_0_45::datatypes::DataType;
+
+#[cfg(feature = "polars_0_46")]
+use polars_crate_0_46::datatypes::DataType;
+
+#[cfg(feature = "polars_0_47")]
+use polars_crate_0_47::datatypes::DataType;
+
+#[cfg(feature = "polars_0_48")]
+use polars_crate_0_48::datatypes::DataType;
+
+#[cfg(feature = "polars_0_49")]
+use polars_crate_0_49::datatypes::DataType;
+
+#[cfg(feature = "polars_0_50")]
+use polars_crate_0_50::datatypes::DataType;
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 struct TestRecord {
     id: i64,

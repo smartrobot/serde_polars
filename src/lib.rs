@@ -190,9 +190,32 @@ impl serde::ser::Serializer for &mut TypeDetector {
     
     fn serialize_newtype_struct<T: ?Sized>(self, name: &'static str, value: &T) -> std::result::Result<Self::Ok, Self::Error>
     where T: serde::Serialize {
-        // Detect wrapper types - these are already efficient!
+        // ONLY detect actual chrono types, not arbitrary newtype structs
         if let Some(field_name) = &self.current_field {
-            self.field_types.insert(field_name.clone(), name.to_string());
+            match name {
+                "NaiveDate" | "NaiveDateTime" | "DateTime" => {
+                    // Determine the specific chrono type
+                    let chrono_type = match name {
+                        "NaiveDate" => "NaiveDate",
+                        "NaiveDateTime" => "NaiveDateTime", 
+                        "DateTime" => {
+                            // For DateTime, we need to check if it's UTC or not
+                            // We'll use type name inspection as a fallback
+                            let type_name = std::any::type_name::<T>();
+                            if type_name.contains("Utc") || type_name.contains("UTC") {
+                                "DateTimeUtc"
+                            } else {
+                                "NaiveDateTime" // Treat as naive if we can't determine timezone
+                            }
+                        },
+                        _ => unreachable!(),
+                    };
+                    self.field_types.insert(field_name.clone(), chrono_type.to_string());
+                },
+                _ => {
+                    // Not a chrono type, ignore
+                }
+            }
         }
         value.serialize(self)
     }

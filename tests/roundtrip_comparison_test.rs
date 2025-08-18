@@ -32,9 +32,6 @@ use polars_crate_0_48 as polars;
 #[cfg(feature = "polars_0_49")]
 use polars_crate_0_49 as polars;
 
-#[cfg(feature = "polars_0_50")]
-use polars_crate_0_50 as polars;
-
 use polars::prelude::*;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
